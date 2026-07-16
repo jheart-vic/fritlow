@@ -1,16 +1,18 @@
-# Agmund — Project Summary
+# Fritlow — Project Summary
 
+> **The product was renamed from "Agmund" to "Fritlow" on 2026-07-16** — the source documents
+> below predate the rename and still say Agmund.
 > Source documents: `~/Downloads/Agmund_PRD_v1.0.docx` (PRD v1.0, 7 July 2026) and
 > `~/Downloads/Agmund_V1_Honest_Summary.pdf` (independent technical assessment, 14 July 2026).
-> This repo (`fritlow`) holds the **Agmund V1 backend only** (Express + TypeScript API). The Nuxt/Vue frontend
+> This repo (`fritlow`) holds the **Fritlow V1 backend only** (Express + TypeScript API). The Nuxt/Vue frontend
 > is built in a separate repo by another developer; the OpenAPI contract is the handoff point.
 
-## What Agmund Is
+## What Fritlow Is
 
-Agmund is an **AI-powered Product Operating System** (agmund.com) that takes a founder from a
+Fritlow is an **AI-powered Product Operating System** that takes a founder from a
 one-line idea to a build-ready **Living Blueprint**. Its differentiator is deliberately **process,
 not "better AI"**: a guided discovery interview, AI Challenge Mode (pushes back on weak
-assumptions), a Product Health Score (Agmund Score™), and one source of truth per project.
+assumptions), a Product Health Score, and one source of truth per project.
 
 - Tagline: *"From idea to launch. One workspace. One source of truth."*
 - Owner: Lhuj (Agbassi Edmund Obinna)
@@ -61,4 +63,4 @@ Design north star: every screen answers "What should I do next?" within ~3 secon
 1. **Lock the data model first** — write the schema (Prisma models) before UI work; decide reference-vs-embed and transaction paths up front.
 2. **Draft the OpenAPI contract** for core endpoints so frontend and backend move in parallel.
 3. **Stand up the AI abstraction early** behind a single interface so provider swaps are config, not refactors.
-4. Optional name check: "Agmund" is fine (founder-brand equity); *Groundwork*/*Keystone* were suggested alternates.
+4. ~~Name check~~ — resolved: the product is named **Fritlow** (renamed from Agmund, 2026-07-16).
