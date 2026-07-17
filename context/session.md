@@ -43,10 +43,17 @@
 - **AI orchestration layer shipped** (provider: **Anthropic**, user decision): `src/lib/ai/` — `types.ts` (AiProvider interface), `anthropic.provider.ts` (only file allowed to import `@anthropic-ai/sdk`; model from `AI_MODEL` env, default `claude-opus-4-8`, adaptive thinking), `ai.service.ts` (`generateText()` — the single AI entry point; logs EVERY call, success and error, to the new `AiInteraction` table — migration `20260717150106_add_ai_interactions`). Returns 503 when `ANTHROPIC_API_KEY` is unset, 502 on provider errors.
 - **First AI consumer**: `POST /projects/:id/discovery/answers/:questionId/follow-up` — generates one Challenge-Mode follow-up question from the founder's answer + project context; stored in the answer's JSONB (`followUp: {question, answer}`); reply via `followUpAnswer` on the answers endpoint. E2E verified: 400 before answering / unknown question, 503 without key. **Live AI call not yet tested — user must put an Anthropic API key (console.anthropic.com) into `.env` `ANTHROPIC_API_KEY`.**
 
+- **API key added but account has no credits** — live AI test failed with "credit balance too low" (perfectly captured by the AiInteraction log). User will top up at console.anthropic.com → Plans & Billing ($5 min) later.
+- **Neon migration fix**: `prisma migrate` started failing (P1001) through the pooled endpoint while the app connected fine. Fix: `DIRECT_DATABASE_URL` (pooled URL minus `-pooler`) in .env; `prisma.config.ts` now prefers it for CLI ops. Documented in .env.example.
+- **Blueprint module shipped** (migration `20260717152828_add_blueprints_decisions`): Blueprint (1:1 project, status GENERATING/READY/FAILED) + BlueprintSection (JSONB `{markdown}`, stable keys, unique per blueprint). Eight canonical sections defined in `blueprint.sections.ts`. Endpoints: POST `/projects/:id/blueprint` (AI-generates all sections from the full discovery transcript incl. follow-ups, one transaction, flips project to BLUEPRINT_COMPLETE; 409 if exists, 400 if discovery incomplete), GET (with sections), PATCH `/blueprint/sections/:key` (the "Living" edit path).
+- **Decision Log module shipped**: DecisionLog model (title, reasoning, status ACTIVE/REVISED/REVERSED, createdBy). Full CRUD under `/projects/:id/decisions`. E2E verified.
+- Blueprint guard paths e2e-verified; **AI generation path untested pending credits** (same blocker as follow-ups).
+- Gotcha hit twice this session: a stale `npm run dev`/tsx server holding port 4000 serves OLD routes — kill all fritlow node processes before e2e testing.
+
 ### Next
-- User adds ANTHROPIC_API_KEY, then live-test the follow-up endpoint.
-- Blueprint module (sections as JSONB, generation from discovery answers via the AI layer — needs streaming/SSE and likely BullMQ).
-- Challenge Mode + Product Health Score endpoints on the same AI layer.
+- User adds API credits → live-test follow-up + blueprint generation end to end.
+- Export module (PDF/DOCX/Markdown) or Dashboard/next-action endpoints.
+- Product Health Score + Challenge Mode on the AI layer; SSE streaming + BullMQ for generation UX.
 - Wire up email delivery for the password-reset flow (currently dev-only console log).
 - Consider rate limiting on auth endpoints before anything goes public.
 ## Session 1 — 2026-07-16

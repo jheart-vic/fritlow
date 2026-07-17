@@ -94,6 +94,45 @@ export const swaggerSpec = swaggerJsdoc({
             },
           },
         },
+        BlueprintSection: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            key: { type: 'string', example: 'problem_statement' },
+            title: { type: 'string', example: 'Problem Statement' },
+            order: { type: 'integer' },
+            content: {
+              type: 'object',
+              properties: { markdown: { type: 'string' } },
+            },
+            updatedAt: { type: 'string', format: 'date-time' },
+          },
+        },
+        Blueprint: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            projectId: { type: 'string', format: 'uuid' },
+            status: { type: 'string', enum: ['GENERATING', 'READY', 'FAILED'] },
+            generatedAt: { type: 'string', format: 'date-time', nullable: true },
+            sections: {
+              type: 'array',
+              items: { $ref: '#/components/schemas/BlueprintSection' },
+            },
+          },
+        },
+        Decision: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            title: { type: 'string' },
+            reasoning: { type: 'string' },
+            status: { type: 'string', enum: ['ACTIVE', 'REVISED', 'REVERSED'] },
+            decidedAt: { type: 'string', format: 'date-time' },
+            projectId: { type: 'string', format: 'uuid' },
+            createdById: { type: 'string', format: 'uuid' },
+          },
+        },
         Error: {
           type: 'object',
           properties: {

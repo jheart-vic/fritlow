@@ -9,6 +9,9 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    // CLI operations (migrate, studio) need Neon's DIRECT endpoint — the
+    // pooled (-pooler/PgBouncer) URL breaks the migration engine. The app
+    // itself still uses the pooled DATABASE_URL (src/config/env.ts).
+    url: process.env["DIRECT_DATABASE_URL"] ?? process.env["DATABASE_URL"],
   },
 });

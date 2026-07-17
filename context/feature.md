@@ -19,7 +19,7 @@ The AI layer is built (Anthropic, provider-agnostic, fully logged) with adaptive
 - [x] Auth module (JWT + refresh rotation, workspace tenancy foundation) — register/login/refresh/logout/me/forgot/reset; email delivery still TODO
 - [x] Project CRUD + status states (Draft → Discovery → Blueprint Complete → Launched) — workspace-scoped with membership checks; delete = OWNER/ADMIN only
 - [x] Discovery Interview engine — deterministic skeleton (sessions, JSONB answers, question bank, progress/resume, lifecycle) — adaptive follow-ups, Challenge Mode, confidence scoring pending the AI layer
-- [ ] Blueprint module (sections as JSONB, health score, decision log, impact analysis)
+- [x] Blueprint module (8 JSONB sections, AI generation from discovery transcript, living edits) + Decision Log CRUD — health score + impact analysis still TODO
 - [x] AI orchestration layer (provider-agnostic, full interaction logging via AiInteraction; Anthropic first provider; SSE streaming still TODO for blueprint generation)
 - [ ] Async jobs (Redis + BullMQ: blueprint generation, exports; <10s budget with progress feedback)
 - [ ] Export service (PDF / DOCX / Markdown → DO Spaces)

@@ -7,6 +7,8 @@ import { env } from './config/env';
 import { swaggerSpec } from './config/swagger';
 import { errorHandler, notFoundHandler } from './middleware/error-handler';
 import { authRouter } from './modules/auth/auth.routes';
+import { blueprintRouter } from './modules/blueprints/blueprint.routes';
+import { decisionRouter } from './modules/decisions/decision.routes';
 import { discoveryRouter } from './modules/discovery/discovery.routes';
 import { projectRouter } from './modules/projects/project.routes';
 
@@ -40,6 +42,8 @@ app.get('/docs.json', (_req, res) => res.json(swaggerSpec));
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/projects', projectRouter);
 app.use('/api/v1/projects/:projectId/discovery', discoveryRouter);
+app.use('/api/v1/projects/:projectId/blueprint', blueprintRouter);
+app.use('/api/v1/projects/:projectId/decisions', decisionRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
