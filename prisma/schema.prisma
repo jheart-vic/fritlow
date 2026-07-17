@@ -19,6 +19,15 @@ enum WorkspaceRole {
   MEMBER
 }
 
+// The project lifecycle shown on the Projects screen:
+// Draft → Discovery → Blueprint Complete → Launched.
+enum ProjectStatus {
+  DRAFT
+  DISCOVERY
+  BLUEPRINT_COMPLETE
+  LAUNCHED
+}
+
 model User {
   id           String   @id @default(uuid())
   email        String   @unique
@@ -27,9 +36,10 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  memberships    WorkspaceMember[]
-  refreshTokens  RefreshToken[]
-  passwordResets PasswordResetToken[]
+  memberships     WorkspaceMember[]
+  refreshTokens   RefreshToken[]
+  passwordResets  PasswordResetToken[]
+  createdProjects Project[]
 }
 
 // Tenancy root: every project will live inside a workspace.
@@ -40,7 +50,27 @@ model Workspace {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members WorkspaceMember[]
+  members  WorkspaceMember[]
+  projects Project[]
+}
+
+// The core domain object: everything in Fritlow lives inside a project,
+// and every project lives inside a workspace (the tenancy rule).
+model Project {
+  id          String        @id @default(uuid())
+  name        String
+  oneLineIdea String
+  category    String?
+  status      ProjectStatus @default(DRAFT)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId String
+  createdBy   User      @relation(fields: [createdById], references: [id])
+  createdById String
+
+  @@index([workspaceId])
 }
 
 // Join table between User and Workspace, carrying the user's role.

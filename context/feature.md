@@ -2,11 +2,9 @@
 
 > Update this file whenever the active feature changes. One feature in focus at a time.
 
-## Active: Database setup + Auth flow
+## Active: Discovery Interview engine (next up)
 
-**Status:** Code complete and verified locally (typecheck clean, server boots, Swagger up). **Blocked on:** user creating the Neon database and running the first migration (`npm run db:migrate`).
-
-**Goal:** Working Postgres (Neon) + full auth flow, documented in Swagger.
+Auth (cookie-based refresh) and Project CRUD are **done and e2e-verified against Neon**. The next feature is the signature one: the adaptive discovery interview — DiscoverySession + DiscoveryAnswer models (JSONB payloads), session lifecycle tied to project status, and eventually the AI orchestration layer for adaptive follow-ups.
 
 ### Next concrete steps (in order)
 1. ~~Confirm database~~ — **DONE: PostgreSQL + Prisma** (2026-07-16).
@@ -19,7 +17,7 @@
 
 ### Feature backlog (MVP order, after bootstrap — backend/API deliverables)
 - [x] Auth module (JWT + refresh rotation, workspace tenancy foundation) — register/login/refresh/logout/me/forgot/reset; email delivery still TODO
-- [ ] Project CRUD + status states (Draft → Discovery → Blueprint Complete → Launched)
+- [x] Project CRUD + status states (Draft → Discovery → Blueprint Complete → Launched) — workspace-scoped with membership checks; delete = OWNER/ADMIN only
 - [ ] Discovery Interview engine (sessions, answers, adaptive follow-ups, Challenge Mode, confidence scoring) — the signature feature
 - [ ] Blueprint module (sections as JSONB, health score, decision log, impact analysis)
 - [ ] AI orchestration layer (provider-agnostic, SSE streaming, full interaction logging)

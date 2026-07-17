@@ -49,6 +49,23 @@ export const swaggerSpec = swaggerJsdoc({
             },
           },
         },
+        Project: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            name: { type: 'string' },
+            oneLineIdea: { type: 'string' },
+            category: { type: 'string', nullable: true },
+            status: {
+              type: 'string',
+              enum: ['DRAFT', 'DISCOVERY', 'BLUEPRINT_COMPLETE', 'LAUNCHED'],
+            },
+            workspaceId: { type: 'string', format: 'uuid' },
+            createdById: { type: 'string', format: 'uuid' },
+            createdAt: { type: 'string', format: 'date-time' },
+            updatedAt: { type: 'string', format: 'date-time' },
+          },
+        },
         Error: {
           type: 'object',
           properties: {

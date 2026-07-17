@@ -30,8 +30,10 @@
 - **Auth hardened to cookie-based refresh (user decision)**: refresh token now travels ONLY as an httpOnly cookie `fritlow_rt` (path=/api/v1/auth, 30d, Secure+SameSite=None when COOKIE_SECURE=true, Lax in dev); access token stays in the JSON body — frontend should keep it in memory (Pinia), NOT localStorage; sessionStorage acceptable per-tab compromise. Body `refreshToken` remains as a fallback for non-browser clients. CORS now uses an origin allowlist (`CORS_ORIGIN` env) with credentials. New envs: CORS_ORIGIN, COOKIE_SECURE. Fixed: validateBody treats missing body as `{}`. E2E verified with a cookie jar: login sets cookie → refresh with empty body works → logout clears cookie + revokes → replay fails.
 - Production note: prefer serving app + api under one apex domain (e.g. app./api.fritlow.com) so the cookie can be SameSite=Lax.
 
+- **Project module shipped** (`src/modules/projects/`, migration `20260716213150_add_projects`): Project model (name, oneLineIdea, category?, status enum DRAFT/DISCOVERY/BLUEPRINT_COMPLETE/LAUNCHED, workspace-scoped, createdBy). Endpoints: POST/GET `/api/v1/projects` (+ `?status=` filter), GET/PATCH/DELETE `/api/v1/projects/:id`. Tenancy enforced in the service via `assertMembership`; delete requires OWNER/ADMIN. Create defaults to the user's personal workspace when `workspaceId` omitted. E2E verified incl. cross-user 403s. Second test account: `second@fritlow.dev` / `another-pass-456`.
+
 ### Next
-- Workspace/Project CRUD module (extend Prisma schema with Project, statuses Draft → Discovery → Blueprint Complete → Launched).
+- Discovery Interview engine (the signature feature) — DiscoverySession/Answer models next schema addition.
 - Wire up email delivery for the password-reset flow (currently dev-only console log).
 - Consider rate limiting on auth endpoints before anything goes public.
 ## Session 1 — 2026-07-16

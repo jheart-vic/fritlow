@@ -7,6 +7,7 @@ import { env } from './config/env';
 import { swaggerSpec } from './config/swagger';
 import { errorHandler, notFoundHandler } from './middleware/error-handler';
 import { authRouter } from './modules/auth/auth.routes';
+import { projectRouter } from './modules/projects/project.routes';
 
 // app.ts builds the Express app (middleware + routes) without starting it,
 // so tests can import the app without opening a network port.
@@ -36,6 +37,7 @@ app.get('/docs.json', (_req, res) => res.json(swaggerSpec));
 
 // Feature modules — every new module gets one line here.
 app.use('/api/v1/auth', authRouter);
+app.use('/api/v1/projects', projectRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
