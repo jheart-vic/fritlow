@@ -54,6 +54,33 @@ model Workspace {
   projects Project[]
 }
 
+enum AiCallStatus {
+  SUCCESS
+  ERROR
+}
+
+// Audit log of every AI call (PRD: log all interactions end to end).
+// Deliberately relation-free: log rows must survive user/project deletion.
+model AiInteraction {
+  id           String       @id @default(uuid())
+  feature      String // which product feature made the call, e.g. "discovery.follow_up"
+  provider     String // "anthropic", later "openai" | "gemini"
+  model        String
+  systemPrompt String?
+  userPrompt   String
+  response     String?
+  inputTokens  Int?
+  outputTokens Int?
+  latencyMs    Int
+  status       AiCallStatus
+  error        String?
+  userId       String?
+  projectId    String?
+  createdAt    DateTime     @default(now())
+
+  @@index([feature, createdAt])
+}
+
 enum DiscoveryStatus {
   ACTIVE
   COMPLETED

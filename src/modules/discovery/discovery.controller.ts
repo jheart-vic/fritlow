@@ -23,6 +23,15 @@ export async function answer(req: Request, res: Response) {
   res.status(200).json(result);
 }
 
+export async function followUp(req: Request, res: Response) {
+  const result = await discoveryService.generateFollowUp(
+    req.user!.id,
+    projectId(req),
+    req.params.questionId as string,
+  );
+  res.status(200).json(result);
+}
+
 export async function complete(req: Request, res: Response) {
   const session = await discoveryService.completeSession(req.user!.id, projectId(req));
   res.status(200).json({ session });
