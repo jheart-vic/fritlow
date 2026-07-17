@@ -30,6 +30,24 @@ export interface GenerateTextParams {
 }
 
 export async function generateText(params: GenerateTextParams): Promise<string> {
+  return run(params, (provider, request) => provider.complete(request));
+}
+
+// Streaming twin: onDelta receives text chunks as the model writes them.
+// Same logging, same error handling — only delivery differs.
+export async function generateTextStream(
+  params: GenerateTextParams,
+  onDelta: (text: string) => void,
+): Promise<string> {
+  return run(params, (provider, request) => provider.completeStream(request, onDelta));
+}
+
+type Executor = (
+  provider: ReturnType<typeof getProvider>,
+  request: { system?: string; prompt: string; maxTokens?: number },
+) => ReturnType<ReturnType<typeof getProvider>['complete']>;
+
+async function run(params: GenerateTextParams, execute: Executor): Promise<string> {
   const provider = getProvider();
 
   if (!provider.isConfigured()) {
@@ -39,7 +57,7 @@ export async function generateText(params: GenerateTextParams): Promise<string> 
   const startedAt = Date.now();
 
   try {
-    const result = await provider.complete({
+    const result = await execute(provider, {
       system: params.system,
       prompt: params.prompt,
       maxTokens: params.maxTokens,

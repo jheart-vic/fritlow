@@ -133,6 +133,45 @@ export const swaggerSpec = swaggerJsdoc({
             createdById: { type: 'string', format: 'uuid' },
           },
         },
+        HealthScore: {
+          type: 'object',
+          properties: {
+            overall: { type: 'integer', minimum: 0, maximum: 100 },
+            summary: { type: 'string', nullable: true },
+            dimensions: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  key: { type: 'string', example: 'problem_clarity' },
+                  label: { type: 'string', example: 'Problem Clarity' },
+                  score: { type: 'integer', minimum: 0, maximum: 100 },
+                  feedback: { type: 'string' },
+                },
+              },
+            },
+            updatedAt: { type: 'string', format: 'date-time' },
+          },
+        },
+        NextAction: {
+          type: 'object',
+          nullable: true,
+          properties: {
+            type: {
+              type: 'string',
+              enum: [
+                'START_DISCOVERY',
+                'CONTINUE_DISCOVERY',
+                'COMPLETE_DISCOVERY',
+                'GENERATE_BLUEPRINT',
+                'REVIEW_BLUEPRINT',
+                'CELEBRATE',
+              ],
+            },
+            label: { type: 'string', example: 'Continue the interview (4/10 answered)' },
+            projectId: { type: 'string', format: 'uuid' },
+          },
+        },
         Error: {
           type: 'object',
           properties: {

@@ -19,9 +19,9 @@ function parseJsonObject(raw: string): Record<string, string> {
   return parsed as Record<string, string>;
 }
 
-// The heavy AI call: turn the completed discovery interview into the
-// eight-section Living Blueprint, all in one transaction.
-export async function generateBlueprint(userId: string, projectId: string) {
+// Validates preconditions and builds the AI request. Shared by the sync
+// and streaming generation paths so they can never drift apart.
+async function prepareGeneration(userId: string, projectId: string) {
   const project = await getProject(userId, projectId);
 
   const existing = await prisma.blueprint.findUnique({ where: { projectId } });
@@ -54,31 +54,39 @@ export async function generateBlueprint(userId: string, projectId: string) {
     .map((s) => `- "${s.key}": ${s.title} — ${s.guidance}`)
     .join('\n');
 
-  const raw = await aiService.generateText({
-    feature: 'blueprint.generate',
-    userId,
-    projectId,
-    maxTokens: 8192,
-    system:
+  return {
+    request: {
+      feature: 'blueprint.generate',
+      userId,
+      projectId,
+      maxTokens: 8192,
+      system: GENERATION_SYSTEM_PROMPT,
+      prompt: [
+        `Project: ${project.name}`,
+        `One-line idea: ${project.oneLineIdea}`,
+        project.category ? `Category: ${project.category}` : '',
+        '',
+        'Sections to write (key: title — guidance):',
+        sectionSpec,
+        '',
+        'Discovery interview transcript:',
+        interviewTranscript,
+      ].join('\n'),
+    },
+  };
+}
+
+const GENERATION_SYSTEM_PROMPT =
       'You are the blueprint writer inside Fritlow, a product operating system for founders. ' +
       'From a discovery interview transcript, write a build-ready product blueprint. ' +
       'Be concrete and honest: where the founder was vague, narrow it for them and say so; ' +
       'where evidence is missing, flag it as an open risk rather than inventing facts. ' +
       'Respond with ONLY a JSON object — no code fences, no commentary — whose keys are ' +
-      'exactly the section keys given, and whose values are the section contents as markdown strings.',
-    prompt: [
-      `Project: ${project.name}`,
-      `One-line idea: ${project.oneLineIdea}`,
-      project.category ? `Category: ${project.category}` : '',
-      '',
-      'Sections to write (key: title — guidance):',
-      sectionSpec,
-      '',
-      'Discovery interview transcript:',
-      interviewTranscript,
-    ].join('\n'),
-  });
+      'exactly the section keys given, and whose values are the section contents as markdown strings.';
 
+// Parses the AI output, then writes blueprint + sections + project status
+// flip atomically. Shared by both generation paths.
+async function persistGenerated(projectId: string, raw: string) {
   let sectionsByKey: Record<string, string>;
   try {
     sectionsByKey = parseJsonObject(raw);
@@ -110,6 +118,26 @@ export async function generateBlueprint(userId: string, projectId: string) {
   });
 
   return getBlueprintById(blueprint.id);
+}
+
+// The heavy AI call: turn the completed discovery interview into the
+// eight-section Living Blueprint.
+export async function generateBlueprint(userId: string, projectId: string) {
+  const { request } = await prepareGeneration(userId, projectId);
+  const raw = await aiService.generateText(request);
+  return persistGenerated(projectId, raw);
+}
+
+// Streaming twin for the SSE endpoint: same validation, same persistence,
+// but the caller sees the model's text as it is written.
+export async function generateBlueprintStream(
+  userId: string,
+  projectId: string,
+  onDelta: (text: string) => void,
+) {
+  const { request } = await prepareGeneration(userId, projectId);
+  const raw = await aiService.generateTextStream(request, onDelta);
+  return persistGenerated(projectId, raw);
 }
 
 async function getBlueprintById(id: string) {

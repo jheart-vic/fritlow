@@ -22,27 +22,46 @@ export const anthropicProvider: AiProvider = {
   },
 
   async complete(request: AiCompletionRequest): Promise<AiCompletionResult> {
-    const response = await getClient().messages.create({
-      model: env.AI_MODEL,
-      max_tokens: request.maxTokens ?? 1024,
-      // Adaptive thinking: the model decides how much reasoning a task needs.
-      thinking: { type: 'adaptive' },
-      ...(request.system ? { system: request.system } : {}),
-      messages: [{ role: 'user', content: request.prompt }],
-    });
+    const response = await getClient().messages.create(buildParams(request));
+    return toResult(response);
+  },
 
-    // Content is a list of typed blocks (text, thinking, …) — keep the text.
-    const text = response.content
-      .filter((block) => block.type === 'text')
-      .map((block) => block.text)
-      .join('')
-      .trim();
-
-    return {
-      text,
-      model: response.model,
-      inputTokens: response.usage.input_tokens,
-      outputTokens: response.usage.output_tokens,
-    };
+  async completeStream(
+    request: AiCompletionRequest,
+    onDelta: (text: string) => void,
+  ): Promise<AiCompletionResult> {
+    // Streaming avoids HTTP timeouts on long generations AND lets the
+    // client render progress live.
+    const stream = getClient().messages.stream(buildParams(request));
+    stream.on('text', onDelta);
+    const response = await stream.finalMessage();
+    return toResult(response);
   },
 };
+
+function buildParams(request: AiCompletionRequest) {
+  return {
+    model: env.AI_MODEL,
+    max_tokens: request.maxTokens ?? 1024,
+    // Adaptive thinking: the model decides how much reasoning a task needs.
+    thinking: { type: 'adaptive' as const },
+    ...(request.system ? { system: request.system } : {}),
+    messages: [{ role: 'user' as const, content: request.prompt }],
+  };
+}
+
+function toResult(response: Anthropic.Message): AiCompletionResult {
+  // Content is a list of typed blocks (text, thinking, …) — keep the text.
+  const text = response.content
+    .filter((block) => block.type === 'text')
+    .map((block) => block.text)
+    .join('')
+    .trim();
+
+  return {
+    text,
+    model: response.model,
+    inputTokens: response.usage.input_tokens,
+    outputTokens: response.usage.output_tokens,
+  };
+}
