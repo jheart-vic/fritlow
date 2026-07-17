@@ -81,6 +81,28 @@ blueprintRouter.get('/', blueprintController.get);
 
 /**
  * @openapi
+ * /api/v1/projects/{projectId}/blueprint/stream:
+ *   post:
+ *     tags: [Blueprint]
+ *     summary: Generate the blueprint with live progress (Server-Sent Events)
+ *     description: "Same behavior as POST /blueprint but the response is text/event-stream: `delta` events carry text chunks as the AI writes, then one `done` event with the persisted blueprint (or an `error` event). Consume with fetch + ReadableStream (EventSource can't send the Authorization header)."
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: SSE stream (delta* -> done | error)
+ *         content:
+ *           text/event-stream: { schema: { type: string } }
+ */
+blueprintRouter.post('/stream', blueprintController.generateStream);
+
+/**
+ * @openapi
  * /api/v1/projects/{projectId}/blueprint/sections/{sectionKey}:
  *   patch:
  *     tags: [Blueprint]

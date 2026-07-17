@@ -8,8 +8,11 @@ import { swaggerSpec } from './config/swagger';
 import { errorHandler, notFoundHandler } from './middleware/error-handler';
 import { authRouter } from './modules/auth/auth.routes';
 import { blueprintRouter } from './modules/blueprints/blueprint.routes';
+import { dashboardRouter } from './modules/dashboard/dashboard.routes';
 import { decisionRouter } from './modules/decisions/decision.routes';
 import { discoveryRouter } from './modules/discovery/discovery.routes';
+import { exportRouter } from './modules/exports/export.routes';
+import { healthScoreRouter } from './modules/health/health.routes';
 import { projectRouter } from './modules/projects/project.routes';
 
 // app.ts builds the Express app (middleware + routes) without starting it,
@@ -44,6 +47,9 @@ app.use('/api/v1/projects', projectRouter);
 app.use('/api/v1/projects/:projectId/discovery', discoveryRouter);
 app.use('/api/v1/projects/:projectId/blueprint', blueprintRouter);
 app.use('/api/v1/projects/:projectId/decisions', decisionRouter);
+app.use('/api/v1/projects/:projectId/export', exportRouter);
+app.use('/api/v1/projects/:projectId/health-score', healthScoreRouter);
+app.use('/api/v1/dashboard', dashboardRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

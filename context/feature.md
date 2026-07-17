@@ -21,9 +21,10 @@ The AI layer is built (Anthropic, provider-agnostic, fully logged) with adaptive
 - [x] Discovery Interview engine — deterministic skeleton (sessions, JSONB answers, question bank, progress/resume, lifecycle) — adaptive follow-ups, Challenge Mode, confidence scoring pending the AI layer
 - [x] Blueprint module (8 JSONB sections, AI generation from discovery transcript, living edits) + Decision Log CRUD — health score + impact analysis still TODO
 - [x] AI orchestration layer (provider-agnostic, full interaction logging via AiInteraction; Anthropic first provider; SSE streaming still TODO for blueprint generation)
-- [ ] Async jobs (Redis + BullMQ: blueprint generation, exports; <10s budget with progress feedback)
-- [ ] Export service (PDF / DOCX / Markdown → DO Spaces)
-- [ ] Dashboard/next-action endpoints, notifications, settings, subscriptions, audit logs
+- [~] Async jobs — SSE streaming done (blueprint generation with live deltas); BullMQ deferred until Redis exists (Upstash at deploy)
+- [x] Export service (PDF / DOCX / Markdown, on-the-fly; DO Spaces storage at deploy)
+- [x] Dashboard/next-action endpoint + [x] Product Health Score (AI-graded, 5 dimensions)
+- [ ] Notifications, settings, subscriptions, audit logs, rate limiting, reset-password email
 
 ### Completed features
 _(none yet)_

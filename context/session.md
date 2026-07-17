@@ -50,10 +50,18 @@
 - Blueprint guard paths e2e-verified; **AI generation path untested pending credits** (same blocker as follow-ups).
 - Gotcha hit twice this session: a stale `npm run dev`/tsx server holding port 4000 serves OLD routes — kill all fritlow node processes before e2e testing.
 
+- **Exports shipped** (migration `add_exports_health_score`): GET `/projects/:id/export?format=pdf|docx|markdown` — on-the-fly generation via marked + pdfkit + docx (no storage yet; DO Spaces at deploy). Shared ExportableDoc model; inline markdown stripped to plain text in PDF/DOCX for V1. Export rows logged. All 3 formats e2e-verified (magic bytes checked).
+- **Dashboard shipped**: GET `/api/v1/dashboard` — projects with discovery progress + ONE deterministic nextAction each (START/CONTINUE/COMPLETE_DISCOVERY → GENERATE/REVIEW_BLUEPRINT → CELEBRATE); top-level nextAction = most recently touched project. Pure logic, no AI.
+- **Health Score shipped**: HealthScore model (1:1 project, JSONB dimensions). POST/GET `/projects/:id/health-score` — AI grades 5 dimensions (problem_clarity, target_audience, business_model, differentiation, mvp_focus) with feedback; overall = server-computed average. Needs ≥3 answers (400 otherwise). AI path pending credits.
+- **SSE streaming shipped**: AiProvider gained `completeStream`; `generateTextStream` in ai.service (same logging); POST `/projects/:id/blueprint/stream` emits `delta` events live then `done` with the persisted blueprint (errors become SSE `error` events since headers are already sent). Blueprint generation refactored: prepareGeneration + persistGenerated shared by sync + stream paths.
+- **BullMQ deliberately deferred**: needs a Redis server (none on this machine, no Docker). Decide at deploy time — Upstash free tier is the Neon-equivalent option. SSE covers the progress-feedback UX for now.
+- **Render deploy fix**: build failed because gitignored `src/generated/prisma` doesn't exist on a fresh clone. Fixed: `postinstall: prisma generate` + `db:deploy` script (`prisma migrate deploy`) + engines.node>=22. Verified by deleting src/generated locally and re-running npm install + build. Render needs env vars: DATABASE_URL, DIRECT_DATABASE_URL, JWT_ACCESS_SECRET, COOKIE_SECURE=true, CORS_ORIGIN=<frontend origin>, ANTHROPIC_API_KEY; build `npm install && npm run build`, start `npm start`, pre-deploy `npm run db:deploy`.
+- Test blueprint seeded on the "Fritlow" project (3 fake sections) for export testing — delete before real generation (regenerate returns 409 otherwise).
+
 ### Next
-- User adds API credits → live-test follow-up + blueprint generation end to end.
-- Export module (PDF/DOCX/Markdown) or Dashboard/next-action endpoints.
-- Product Health Score + Challenge Mode on the AI layer; SSE streaming + BullMQ for generation UX.
+- User adds API credits → live-test follow-ups, blueprint generation (sync + SSE), health score.
+- Deploy to Render (env vars above); decide Redis/BullMQ + DO Spaces then.
+- Remaining backlog: notifications, settings, subscriptions, audit logs, rate limiting, password-reset email delivery.
 - Wire up email delivery for the password-reset flow (currently dev-only console log).
 - Consider rate limiting on auth endpoints before anything goes public.
 ## Session 1 — 2026-07-16
