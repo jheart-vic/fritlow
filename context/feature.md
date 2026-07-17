@@ -2,9 +2,9 @@
 
 > Update this file whenever the active feature changes. One feature in focus at a time.
 
-## Active: Discovery Interview engine (next up)
+## Active: AI orchestration layer (next up)
 
-Auth (cookie-based refresh) and Project CRUD are **done and e2e-verified against Neon**. The next feature is the signature one: the adaptive discovery interview — DiscoverySession + DiscoveryAnswer models (JSONB payloads), session lifecycle tied to project status, and eventually the AI orchestration layer for adaptive follow-ups.
+Auth, Project CRUD, and the Discovery interview skeleton are **done and e2e-verified against Neon**. Next: the provider-agnostic AI layer (single interface, providers as config — see summary.md), with its first consumer being adaptive follow-up questions + Challenge Mode in discovery, then blueprint generation.
 
 ### Next concrete steps (in order)
 1. ~~Confirm database~~ — **DONE: PostgreSQL + Prisma** (2026-07-16).
@@ -18,7 +18,7 @@ Auth (cookie-based refresh) and Project CRUD are **done and e2e-verified against
 ### Feature backlog (MVP order, after bootstrap — backend/API deliverables)
 - [x] Auth module (JWT + refresh rotation, workspace tenancy foundation) — register/login/refresh/logout/me/forgot/reset; email delivery still TODO
 - [x] Project CRUD + status states (Draft → Discovery → Blueprint Complete → Launched) — workspace-scoped with membership checks; delete = OWNER/ADMIN only
-- [ ] Discovery Interview engine (sessions, answers, adaptive follow-ups, Challenge Mode, confidence scoring) — the signature feature
+- [x] Discovery Interview engine — deterministic skeleton (sessions, JSONB answers, question bank, progress/resume, lifecycle) — adaptive follow-ups, Challenge Mode, confidence scoring pending the AI layer
 - [ ] Blueprint module (sections as JSONB, health score, decision log, impact analysis)
 - [ ] AI orchestration layer (provider-agnostic, SSE streaming, full interaction logging)
 - [ ] Async jobs (Redis + BullMQ: blueprint generation, exports; <10s budget with progress feedback)

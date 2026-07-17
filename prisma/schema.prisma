@@ -54,6 +54,44 @@ model Workspace {
   projects Project[]
 }
 
+enum DiscoveryStatus {
+  ACTIVE
+  COMPLETED
+  ABANDONED
+}
+
+// One guided interview per project (the signature feature). The session
+// tracks lifecycle; the answers hold the founder's actual input.
+model DiscoverySession {
+  id          String          @id @default(uuid())
+  status      DiscoveryStatus @default(ACTIVE)
+  startedAt   DateTime        @default(now())
+  completedAt DateTime?
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId String  @unique // one session per project in V1
+
+  answers DiscoveryAnswer[]
+}
+
+// One answer per question per session. `answer` is JSONB: today it's
+// { "text": "..." }, later AI follow-ups can add structure without a
+// schema migration — exactly what JSONB is for.
+model DiscoveryAnswer {
+  id           String   @id @default(uuid())
+  questionId   String // stable key from the question bank (e.g. "problem.who")
+  questionText String // snapshot, so old answers survive question-bank edits
+  module       String // interview module, e.g. "problem", "customer"
+  answer       Json
+  answeredAt   DateTime @default(now())
+
+  session   DiscoverySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId String
+
+  // Answering the same question again replaces the answer (upsert target).
+  @@unique([sessionId, questionId])
+}
+
 // The core domain object: everything in Fritlow lives inside a project,
 // and every project lives inside a workspace (the tenancy rule).
 model Project {
@@ -69,6 +107,8 @@ model Project {
   workspaceId String
   createdBy   User      @relation(fields: [createdById], references: [id])
   createdById String
+
+  discoverySession DiscoverySession?
 
   @@index([workspaceId])
 }
