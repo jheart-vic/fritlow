@@ -40,8 +40,13 @@
 - E2E verified: start → early complete 400 → 10 answers → complete → answer-after-close 400.
 - **AI decision recorded**: V1 needs an LLM for adaptive follow-ups, Challenge Mode, blueprint generation, health score — but the interview skeleton is deterministic by design. The AI layer (provider-agnostic, per summary.md) is a separate upcoming feature; question bank questions become "anchors" and AI generates follow-ups between them.
 
+- **AI orchestration layer shipped** (provider: **Anthropic**, user decision): `src/lib/ai/` — `types.ts` (AiProvider interface), `anthropic.provider.ts` (only file allowed to import `@anthropic-ai/sdk`; model from `AI_MODEL` env, default `claude-opus-4-8`, adaptive thinking), `ai.service.ts` (`generateText()` — the single AI entry point; logs EVERY call, success and error, to the new `AiInteraction` table — migration `20260717150106_add_ai_interactions`). Returns 503 when `ANTHROPIC_API_KEY` is unset, 502 on provider errors.
+- **First AI consumer**: `POST /projects/:id/discovery/answers/:questionId/follow-up` — generates one Challenge-Mode follow-up question from the founder's answer + project context; stored in the answer's JSONB (`followUp: {question, answer}`); reply via `followUpAnswer` on the answers endpoint. E2E verified: 400 before answering / unknown question, 503 without key. **Live AI call not yet tested — user must put an Anthropic API key (console.anthropic.com) into `.env` `ANTHROPIC_API_KEY`.**
+
 ### Next
-- AI orchestration layer (provider abstraction + first use: adaptive follow-up questions in discovery).
+- User adds ANTHROPIC_API_KEY, then live-test the follow-up endpoint.
+- Blueprint module (sections as JSONB, generation from discovery answers via the AI layer — needs streaming/SSE and likely BullMQ).
+- Challenge Mode + Product Health Score endpoints on the same AI layer.
 - Wire up email delivery for the password-reset flow (currently dev-only console log).
 - Consider rate limiting on auth endpoints before anything goes public.
 ## Session 1 — 2026-07-16

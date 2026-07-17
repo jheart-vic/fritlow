@@ -20,6 +20,11 @@ const envSchema = z.object({
     .string()
     .default('false')
     .transform((v) => v === 'true'),
+  // AI layer. Key is optional so the rest of the API runs without it —
+  // AI endpoints return 503 until it's configured.
+  AI_PROVIDER: z.enum(['anthropic']).default('anthropic'),
+  ANTHROPIC_API_KEY: z.string().optional(),
+  AI_MODEL: z.string().default('claude-opus-4-8'),
 });
 
 const parsed = envSchema.safeParse(process.env);

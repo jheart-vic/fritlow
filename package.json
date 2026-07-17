@@ -24,6 +24,7 @@
   },
   "homepage": "https://github.com/jheart-vic/fritlow#readme",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.112.1",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "bcryptjs": "^3.0.3",

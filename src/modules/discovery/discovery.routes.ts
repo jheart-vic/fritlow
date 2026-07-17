@@ -96,6 +96,47 @@ discoveryRouter.post('/answers', validateBody(submitAnswerSchema), discoveryCont
 
 /**
  * @openapi
+ * /api/v1/projects/{projectId}/discovery/answers/{questionId}/follow-up:
+ *   post:
+ *     tags: [Discovery]
+ *     summary: Generate an AI follow-up question for an answered question
+ *     description: The AI reads the founder's answer in the project's context and asks one sharper follow-up (gentle Challenge Mode). The follow-up is stored on the answer; reply to it by resubmitting the answer with `followUpAnswer`. Requires the server to have an AI provider key configured.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: path
+ *         name: questionId
+ *         required: true
+ *         schema: { type: string, example: "customer.who" }
+ *     responses:
+ *       200:
+ *         description: The generated follow-up question
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 questionId: { type: string }
+ *                 followUp: { type: string, example: "You said your audience is 'founders' — which specific kind of founder would pay for this in month one?" }
+ *       400:
+ *         description: Question not answered yet, unknown questionId, or session closed
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *       503:
+ *         description: AI not configured on this server
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ */
+discoveryRouter.post('/answers/:questionId/follow-up', discoveryController.followUp);
+
+/**
+ * @openapi
  * /api/v1/projects/{projectId}/discovery/complete:
  *   post:
  *     tags: [Discovery]

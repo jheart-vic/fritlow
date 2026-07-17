@@ -2,9 +2,9 @@
 
 > Update this file whenever the active feature changes. One feature in focus at a time.
 
-## Active: AI orchestration layer (next up)
+## Active: AI layer live-test, then Blueprint module
 
-Auth, Project CRUD, and the Discovery interview skeleton are **done and e2e-verified against Neon**. Next: the provider-agnostic AI layer (single interface, providers as config — see summary.md), with its first consumer being adaptive follow-up questions + Challenge Mode in discovery, then blueprint generation.
+The AI layer is built (Anthropic, provider-agnostic, fully logged) with adaptive follow-ups as its first consumer — **blocked on the user adding `ANTHROPIC_API_KEY` to `.env`** for a live test. After that: the Blueprint module (JSONB sections, AI generation from discovery answers, health score, decision log).
 
 ### Next concrete steps (in order)
 1. ~~Confirm database~~ — **DONE: PostgreSQL + Prisma** (2026-07-16).
@@ -20,7 +20,7 @@ Auth, Project CRUD, and the Discovery interview skeleton are **done and e2e-veri
 - [x] Project CRUD + status states (Draft → Discovery → Blueprint Complete → Launched) — workspace-scoped with membership checks; delete = OWNER/ADMIN only
 - [x] Discovery Interview engine — deterministic skeleton (sessions, JSONB answers, question bank, progress/resume, lifecycle) — adaptive follow-ups, Challenge Mode, confidence scoring pending the AI layer
 - [ ] Blueprint module (sections as JSONB, health score, decision log, impact analysis)
-- [ ] AI orchestration layer (provider-agnostic, SSE streaming, full interaction logging)
+- [x] AI orchestration layer (provider-agnostic, full interaction logging via AiInteraction; Anthropic first provider; SSE streaming still TODO for blueprint generation)
 - [ ] Async jobs (Redis + BullMQ: blueprint generation, exports; <10s budget with progress feedback)
 - [ ] Export service (PDF / DOCX / Markdown → DO Spaces)
 - [ ] Dashboard/next-action endpoints, notifications, settings, subscriptions, audit logs
