@@ -49,6 +49,51 @@ export const swaggerSpec = swaggerJsdoc({
             },
           },
         },
+        Project: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            name: { type: 'string' },
+            oneLineIdea: { type: 'string' },
+            category: { type: 'string', nullable: true },
+            status: {
+              type: 'string',
+              enum: ['DRAFT', 'DISCOVERY', 'BLUEPRINT_COMPLETE', 'LAUNCHED'],
+            },
+            workspaceId: { type: 'string', format: 'uuid' },
+            createdById: { type: 'string', format: 'uuid' },
+            createdAt: { type: 'string', format: 'date-time' },
+            updatedAt: { type: 'string', format: 'date-time' },
+          },
+        },
+        DiscoveryProgress: {
+          type: 'object',
+          properties: {
+            session: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                projectId: { type: 'string', format: 'uuid' },
+                status: { type: 'string', enum: ['ACTIVE', 'COMPLETED', 'ABANDONED'] },
+                startedAt: { type: 'string', format: 'date-time' },
+                completedAt: { type: 'string', format: 'date-time', nullable: true },
+              },
+            },
+            answered: { type: 'integer', example: 3 },
+            total: { type: 'integer', example: 10 },
+            nextQuestion: {
+              type: 'object',
+              nullable: true,
+              description: 'null once every question is answered',
+              properties: {
+                id: { type: 'string', example: 'customer.who' },
+                module: { type: 'string', example: 'customer' },
+                text: { type: 'string' },
+                hint: { type: 'string' },
+              },
+            },
+          },
+        },
         Error: {
           type: 'object',
           properties: {

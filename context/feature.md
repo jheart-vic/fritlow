@@ -2,11 +2,9 @@
 
 > Update this file whenever the active feature changes. One feature in focus at a time.
 
-## Active: Database setup + Auth flow
+## Active: AI orchestration layer (next up)
 
-**Status:** Code complete and verified locally (typecheck clean, server boots, Swagger up). **Blocked on:** user creating the Neon database and running the first migration (`npm run db:migrate`).
-
-**Goal:** Working Postgres (Neon) + full auth flow, documented in Swagger.
+Auth, Project CRUD, and the Discovery interview skeleton are **done and e2e-verified against Neon**. Next: the provider-agnostic AI layer (single interface, providers as config — see summary.md), with its first consumer being adaptive follow-up questions + Challenge Mode in discovery, then blueprint generation.
 
 ### Next concrete steps (in order)
 1. ~~Confirm database~~ — **DONE: PostgreSQL + Prisma** (2026-07-16).
@@ -19,8 +17,8 @@
 
 ### Feature backlog (MVP order, after bootstrap — backend/API deliverables)
 - [x] Auth module (JWT + refresh rotation, workspace tenancy foundation) — register/login/refresh/logout/me/forgot/reset; email delivery still TODO
-- [ ] Project CRUD + status states (Draft → Discovery → Blueprint Complete → Launched)
-- [ ] Discovery Interview engine (sessions, answers, adaptive follow-ups, Challenge Mode, confidence scoring) — the signature feature
+- [x] Project CRUD + status states (Draft → Discovery → Blueprint Complete → Launched) — workspace-scoped with membership checks; delete = OWNER/ADMIN only
+- [x] Discovery Interview engine — deterministic skeleton (sessions, JSONB answers, question bank, progress/resume, lifecycle) — adaptive follow-ups, Challenge Mode, confidence scoring pending the AI layer
 - [ ] Blueprint module (sections as JSONB, health score, decision log, impact analysis)
 - [ ] AI orchestration layer (provider-agnostic, SSE streaming, full interaction logging)
 - [ ] Async jobs (Redis + BullMQ: blueprint generation, exports; <10s budget with progress feedback)

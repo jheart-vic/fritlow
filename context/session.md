@@ -30,8 +30,18 @@
 - **Auth hardened to cookie-based refresh (user decision)**: refresh token now travels ONLY as an httpOnly cookie `fritlow_rt` (path=/api/v1/auth, 30d, Secure+SameSite=None when COOKIE_SECURE=true, Lax in dev); access token stays in the JSON body — frontend should keep it in memory (Pinia), NOT localStorage; sessionStorage acceptable per-tab compromise. Body `refreshToken` remains as a fallback for non-browser clients. CORS now uses an origin allowlist (`CORS_ORIGIN` env) with credentials. New envs: CORS_ORIGIN, COOKIE_SECURE. Fixed: validateBody treats missing body as `{}`. E2E verified with a cookie jar: login sets cookie → refresh with empty body works → logout clears cookie + revokes → replay fails.
 - Production note: prefer serving app + api under one apex domain (e.g. app./api.fritlow.com) so the cookie can be SameSite=Lax.
 
+- **Project module shipped** (`src/modules/projects/`, migration `20260716213150_add_projects`): Project model (name, oneLineIdea, category?, status enum DRAFT/DISCOVERY/BLUEPRINT_COMPLETE/LAUNCHED, workspace-scoped, createdBy). Endpoints: POST/GET `/api/v1/projects` (+ `?status=` filter), GET/PATCH/DELETE `/api/v1/projects/:id`. Tenancy enforced in the service via `assertMembership`; delete requires OWNER/ADMIN. Create defaults to the user's personal workspace when `workspaceId` omitted. E2E verified incl. cross-user 403s. Second test account: `second@fritlow.dev` / `another-pass-456`.
+
+## Session 3 — 2026-07-17
+
+### Done
+- **Discovery Interview engine (deterministic skeleton) shipped** — migration `20260717130513_add_discovery`: DiscoverySession (1:1 with Project, status ACTIVE/COMPLETED/ABANDONED) + DiscoveryAnswer (JSONB `answer` column, unique per session+question, upsert = revise). Static 10-question bank in `src/modules/discovery/questions.ts` across 5 modules (problem, customer, business_model, differentiation, mvp_focus) — stable question ids, never reuse them.
+- Endpoints under `/api/v1/projects/:projectId/discovery` (mergeParams router): POST start (flips project to DISCOVERY in same transaction), GET session+progress+nextQuestion (resume screen), POST /answers (upsert), POST /complete (only when all answered).
+- E2E verified: start → early complete 400 → 10 answers → complete → answer-after-close 400.
+- **AI decision recorded**: V1 needs an LLM for adaptive follow-ups, Challenge Mode, blueprint generation, health score — but the interview skeleton is deterministic by design. The AI layer (provider-agnostic, per summary.md) is a separate upcoming feature; question bank questions become "anchors" and AI generates follow-ups between them.
+
 ### Next
-- Workspace/Project CRUD module (extend Prisma schema with Project, statuses Draft → Discovery → Blueprint Complete → Launched).
+- AI orchestration layer (provider abstraction + first use: adaptive follow-up questions in discovery).
 - Wire up email delivery for the password-reset flow (currently dev-only console log).
 - Consider rate limiting on auth endpoints before anything goes public.
 ## Session 1 — 2026-07-16
