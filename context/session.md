@@ -1,0 +1,57 @@
+# Session Log
+
+> Append a new entry at the top after each working session (or before clearing context).
+> Each entry: what was done, decisions made, and what's next. Keep entries short and factual.
+
+---
+
+## Session 2 — 2026-07-16
+
+### Done
+- **Product renamed: Agmund → Fritlow** (user decision). Code, docs, and context updated; the source PDFs/PRD in `~/Downloads` keep their original Agmund filenames.
+- Scaffolded the Express 5 + TypeScript 7 backend: tsconfig (nodenext), scripts (`dev`, `build`, `typecheck`, `db:*`), deps installed (express 5, zod 4, prisma 7, bcryptjs, jsonwebtoken, helmet, cors, swagger-jsdoc, swagger-ui-express, tsx).
+- Wrote Prisma schema (`prisma/schema.prisma`): User, Workspace, WorkspaceMember (role enum OWNER/ADMIN/MEMBER, unique user+workspace), RefreshToken and PasswordResetToken (both stored SHA-256 hashed, revocable/single-use).
+- Built full auth flow in `src/modules/auth/` following **routes → controllers → services → models**: register (creates user + personal workspace in a transaction), login, refresh (with token rotation), logout, me, forgot-password / reset-password (email delivery TODO — token logged/returned in dev only).
+- Core plumbing: zod-validated env config, single PrismaClient via `@prisma/adapter-pg`, ApiError + error-handler middleware, `validateBody` zod middleware, `requireAuth` JWT middleware.
+- Swagger UI at `/docs` (spec at `/docs.json`) — swagger-jsdoc scans `@openapi` blocks in `*.routes.ts`.
+- Verified: typecheck clean, server boots, /health + /docs.json + validation + 401 guard all behave.
+- `.env` created with a generated JWT secret; `.env.example` committed pattern.
+
+### Decisions
+- **Dev database: Neon cloud free tier** (user choice; no local Postgres/Docker on the machine).
+- Refresh tokens are opaque random strings stored hashed with rotation — not JWTs — so they can be revoked.
+- TypeScript 7 requires `moduleResolution: "nodenext"`; Prisma 7 uses `prisma.config.ts` + driver adapter (`@prisma/adapter-pg`), client generated into `src/generated/prisma` (gitignored).
+
+- **Neon database live + first migration applied** (`20260716203115_init_auth`). Note: the user's first Neon project had a stray `products` sample table; they ended up on a fresh Neon project (`ep-empty-rain-…`) instead.
+- **End-to-end verified against Neon**: register (and 409 on duplicate), login, GET /me with Bearer token, refresh rotation, and reuse-of-old-refresh-token correctly rejected. Registration transaction confirmed in DB: test user is OWNER of their personal workspace.
+- Split tsconfig: `tsconfig.json` (typecheck, includes `prisma.config.ts` — fixes IDE "Cannot find name 'process'") + `tsconfig.build.json` (emits only `src` → `dist`).
+- Test account exists in dev DB: `test@agmund.dev` / `test-password-123`.
+
+- **Auth hardened to cookie-based refresh (user decision)**: refresh token now travels ONLY as an httpOnly cookie `fritlow_rt` (path=/api/v1/auth, 30d, Secure+SameSite=None when COOKIE_SECURE=true, Lax in dev); access token stays in the JSON body — frontend should keep it in memory (Pinia), NOT localStorage; sessionStorage acceptable per-tab compromise. Body `refreshToken` remains as a fallback for non-browser clients. CORS now uses an origin allowlist (`CORS_ORIGIN` env) with credentials. New envs: CORS_ORIGIN, COOKIE_SECURE. Fixed: validateBody treats missing body as `{}`. E2E verified with a cookie jar: login sets cookie → refresh with empty body works → logout clears cookie + revokes → replay fails.
+- Production note: prefer serving app + api under one apex domain (e.g. app./api.fritlow.com) so the cookie can be SameSite=Lax.
+
+### Next
+- Workspace/Project CRUD module (extend Prisma schema with Project, statuses Draft → Discovery → Blueprint Complete → Launched).
+- Wire up email delivery for the password-reset flow (currently dev-only console log).
+- Consider rate limiting on auth endpoints before anything goes public.
+## Session 1 — 2026-07-16
+
+### Done
+- Repo `fritlow` initialized (README + LICENSE only; single initial commit on `main`).
+- Created initial `CLAUDE.md`.
+- Received and digested project documents:
+  - `~/Downloads/Agmund_PRD_v1.0.docx` — full PRD for Agmund (AI Product Operating System).
+  - `~/Downloads/Agmund_V1_Honest_Summary.pdf` — independent technical assessment with stack verdict.
+- Created `context/` folder with `summary.md` (product + stack), `feature.md` (current feature + backlog), and this `session.md`.
+- Updated `CLAUDE.md` to point future sessions at the context folder.
+
+### Decisions
+- This repo is the workspace for building **Fritlow V1** (MVP) — named "Agmund" at the time of this session, renamed in Session 2.
+- Recommended stack recorded in `summary.md`: Nuxt 4 + NestJS + TypeScript, Postgres + Prisma (JSONB), Redis + BullMQ, Tiptap, LiteLLM-style AI abstraction, DO Spaces, Vercel + DigitalOcean.
+- **Database confirmed: PostgreSQL + Prisma** (user decision, 2026-07-16). JSONB for document-shaped content (blueprint sections, discovery payloads).
+- **This repo is backend-only** (user decision, 2026-07-16). A separate frontend dev handles the Nuxt/Vue app in another repo — the OpenAPI contract is the handoff point between the two.
+- **Framework confirmed: PEN stack — PostgreSQL + Express + Node with TypeScript** (user decision, 2026-07-16). NestJS was considered but rejected: the user doesn't know it and will be maintaining this backend; Express they can read and debug line by line. Compensate for Express's lack of built-in structure with a disciplined feature-module layout, a service layer, and zod validation.
+
+### Next
+- Scaffold the Express + TypeScript backend in this repo.
+- Lock the data model (schema first, before UI) — see `feature.md` step list.

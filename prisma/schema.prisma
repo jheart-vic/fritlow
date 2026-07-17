@@ -1,0 +1,88 @@
+// Prisma schema — the single source of truth for the database structure.
+// Each `model` becomes a table in Postgres. Run `npm run db:migrate` after
+// changing this file to generate + apply a SQL migration.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Roles a user can hold inside a workspace (RBAC).
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  fullName     String
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships    WorkspaceMember[]
+  refreshTokens  RefreshToken[]
+  passwordResets PasswordResetToken[]
+}
+
+// Tenancy root: every project will live inside a workspace.
+// Users get a personal workspace automatically at registration.
+model Workspace {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members WorkspaceMember[]
+}
+
+// Join table between User and Workspace, carrying the user's role.
+model WorkspaceMember {
+  id          String        @id @default(uuid())
+  role        WorkspaceRole @default(MEMBER)
+  createdAt   DateTime      @default(now())
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId String
+
+  // A user can only be a member of a given workspace once.
+  @@unique([userId, workspaceId])
+}
+
+// Long-lived session tokens. Only a SHA-256 hash is stored — if the DB
+// leaks, the tokens themselves remain unusable.
+model RefreshToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  @@index([userId])
+}
+
+// Single-use tokens for the forgot-password flow, also stored hashed.
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  @@index([userId])
+}
