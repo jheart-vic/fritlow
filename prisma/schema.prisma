@@ -29,16 +29,20 @@ enum ProjectStatus {
 }
 
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  fullName     String
-  passwordHash String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id              String    @id @default(uuid())
+  email           String    @unique
+  fullName        String
+  passwordHash    String
+  // Null until the user clicks the verification link; the timestamp (not a
+  // boolean) records WHEN they verified — useful for audits later.
+  emailVerifiedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  memberships     WorkspaceMember[]
-  refreshTokens   RefreshToken[]
-  passwordResets  PasswordResetToken[]
+  memberships        WorkspaceMember[]
+  refreshTokens      RefreshToken[]
+  passwordResets     PasswordResetToken[]
+  emailVerifications EmailVerificationToken[]
   createdProjects Project[]
   decisions       DecisionLog[]
   exports         Export[]
@@ -267,6 +271,21 @@ model RefreshToken {
   tokenHash String    @unique
   expiresAt DateTime
   revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  @@index([userId])
+}
+
+// Single-use tokens proving the user owns their email address, stored hashed
+// like the other token tables. Created at registration and on resend.
+model EmailVerificationToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
   createdAt DateTime  @default(now())
 
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)

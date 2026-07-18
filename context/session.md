@@ -5,6 +5,23 @@
 
 ---
 
+## Session 4 — 2026-07-18
+
+### Done
+- **Email verification added to auth** (migration `20260718000417_add_email_verification`): `User.emailVerifiedAt DateTime?` + `EmailVerificationToken` table (hashed, single-use, 24h TTL — same pattern as PasswordResetToken). Registration issues a token (dev: logged + returned in the register response as `verificationToken`). New endpoints: POST `/auth/verify-email` (burns token + sets emailVerifiedAt in one transaction), POST `/auth/resend-verification` (always 200 to hide account existence; invalidates older unused tokens so only the newest link works; skips already-verified accounts). `PublicUser` and the Swagger `User` schema gained `emailVerified: boolean`.
+- **Decision: verification does NOT gate login in V1** — email delivery isn't wired up yet, so blocking login would lock everyone out. The frontend nags via the `emailVerified` flag; revisit gating once an email provider exists.
+- E2E verified: register returns token + emailVerified=false → bad token 400 → verify 200 (emailVerified=true) → token reuse 400 → resend on verified/unknown email both 200 with no token → resend on unverified invalidates old token, new one works.
+- Gotcha: `npm run db:migrate -- --name x` doesn't forward `--name` (script hangs on an interactive prompt); use `npx prisma migrate dev --name x` directly.
+- **Frontend handoff docs written**: `docs/frontend-api-guide.md` (all endpoints, session model, SSE guidance, 16-step Postman walkthrough) + `docs/auth-email-verification.md`. Keep both current with API changes.
+- **Project responses now embed `createdBy` `{id, fullName, email}`** (create/list/get/update — Prisma `include`, no migration needed) so the UI can show who created a project without a second request. Swagger + guide updated, e2e verified.
+
+- **Email service built (Brevo)**: `src/lib/email/` — `brevo.provider.ts` (only file that knows Brevo's REST API; native fetch, no SDK) + `email.service.ts` (HTML templates + `sendSafely`: email is best-effort, a failed send is logged but NEVER thrown, so auth flows can't break). Wired into register + resend-verification (verification email) and forgot-password (reset email), fire-and-forget. Links point to `APP_URL` frontend routes `/verify-email?token=…` and `/reset-password?token=…`. New envs: BREVO_API_KEY, EMAIL_FROM_ADDRESS, EMAIL_FROM_NAME, APP_URL (all optional/defaulted; without key sends are skipped + logged). Dev token-in-response behavior kept.
+- **Live Brevo send BLOCKED on account settings**: API key present but Brevo 401s — "unrecognised IP address 105.112.124.69"; user must authorize the IP at https://app.brevo.com/security/authorised_ips (or disable authorised IPs). Sender is `no-reply@beatcircle.co` ("Beat Circle Mail") — that domain/sender must also be verified in Brevo. Fixed a var-name mismatch in the user's .env: `EMAIL_FROM_ADDR` → `EMAIL_FROM_ADDRESS`.
+
+### Next
+- User authorizes their IP (+ verifies sender) in Brevo → live-test verification + reset emails end to end.
+- Same as Session 3: API credits → live AI tests; deploy to Render (add the new email envs there too); rate limiting, notifications/settings/subscriptions/audit logs.
+
 ## Session 2 — 2026-07-16
 
 ### Done

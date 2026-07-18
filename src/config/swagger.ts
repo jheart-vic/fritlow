@@ -30,6 +30,7 @@ export const swaggerSpec = swaggerJsdoc({
             id: { type: 'string', format: 'uuid' },
             email: { type: 'string', format: 'email' },
             fullName: { type: 'string' },
+            emailVerified: { type: 'boolean' },
             createdAt: { type: 'string', format: 'date-time' },
           },
         },
@@ -62,6 +63,15 @@ export const swaggerSpec = swaggerJsdoc({
             },
             workspaceId: { type: 'string', format: 'uuid' },
             createdById: { type: 'string', format: 'uuid' },
+            createdBy: {
+              type: 'object',
+              description: 'The user who created the project',
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                fullName: { type: 'string' },
+                email: { type: 'string', format: 'email' },
+              },
+            },
             createdAt: { type: 'string', format: 'date-time' },
             updatedAt: { type: 'string', format: 'date-time' },
           },

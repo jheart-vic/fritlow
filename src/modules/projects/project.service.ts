@@ -6,6 +6,12 @@ import type { CreateProjectInput, ListProjectsQuery, UpdateProjectInput } from '
 //  - you can only see/touch projects in workspaces you are a member of
 //  - deleting a project requires OWNER or ADMIN role in its workspace
 
+// Embedded in every project response so the UI can show WHO created it
+// without a second request. Deliberately tiny — never the full user row.
+const createdBySelect = {
+  createdBy: { select: { id: true, fullName: true, email: true } },
+} as const;
+
 // Returns the member row if the user belongs to the workspace, else 403.
 // Every service function that touches a project goes through this gate.
 async function assertMembership(userId: string, workspaceId: string) {
@@ -43,6 +49,7 @@ export async function createProject(userId: string, input: CreateProjectInput) {
       workspaceId,
       createdById: userId,
     },
+    include: createdBySelect,
   });
 }
 
@@ -55,11 +62,15 @@ export async function listProjects(userId: string, query: ListProjectsQuery) {
       ...(query.status ? { status: query.status } : {}),
     },
     orderBy: { updatedAt: 'desc' },
+    include: createdBySelect,
   });
 }
 
 export async function getProject(userId: string, projectId: string) {
-  const project = await prisma.project.findUnique({ where: { id: projectId } });
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    include: createdBySelect,
+  });
   if (!project) {
     throw ApiError.notFound('Project not found');
   }
@@ -74,6 +85,7 @@ export async function updateProject(userId: string, projectId: string, input: Up
   return prisma.project.update({
     where: { id: project.id },
     data: input,
+    include: createdBySelect,
   });
 }
 
