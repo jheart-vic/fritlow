@@ -28,8 +28,8 @@ const envSchema = z.object({
   // Email delivery (Brevo). Key is optional so the API runs without it —
   // emails are skipped (and tokens logged in dev) until it's configured.
   BREVO_API_KEY: z.string().optional(),
-  EMAIL_FROM_ADDRESS: z.email().default('no-reply@fritlow.com'),
-  EMAIL_FROM_NAME: z.string().default('Fritlow'),
+  EMAIL_FROM_ADDRESS: z.email().default('no-reply@beatcircle.co'),
+  EMAIL_FROM_NAME: z.string().default('Beat Circle Mail'),
   // Frontend base URL used to build the links inside emails
   // (verify-email, reset-password pages live in the Nuxt app).
   APP_URL: z.url().default('http://localhost:3000'),

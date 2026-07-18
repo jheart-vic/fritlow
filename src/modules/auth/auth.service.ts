@@ -36,8 +36,6 @@ export interface AuthResult {
   user: PublicUser;
   accessToken: string;
   refreshToken: string;
-  // Dev-only convenience until email delivery exists.
-  verificationToken?: string;
 }
 
 function toPublicUser(user: {
@@ -84,7 +82,7 @@ async function issueTokens(user: { id: string; email: string }) {
   return { accessToken, refreshToken };
 }
 
-export async function register(input: RegisterInput): Promise<AuthResult> {
+export async function register(input: RegisterInput): Promise<{ user: PublicUser }> {
   const existing = await prisma.user.findUnique({ where: { email: input.email } });
   if (existing) {
     throw ApiError.conflict('An account with this email already exists');
@@ -113,16 +111,15 @@ export async function register(input: RegisterInput): Promise<AuthResult> {
   // Fire-and-forget: sendSafely never throws, and registration must not
   // wait on (or fail because of) the email provider.
   void sendVerificationEmail({ email: user.email, name: user.fullName }, verificationToken);
+  // The raw token never appears in an API response — it travels by email
+  // only. In dev the server console shows it so flows can be tested.
   if (env.NODE_ENV === 'development') {
     console.log(`[dev] Email verification token for ${user.email}: ${verificationToken}`);
   }
 
-  const tokens = await issueTokens(user);
-  return {
-    user: toPublicUser(user),
-    ...tokens,
-    ...(env.NODE_ENV === 'development' ? { verificationToken } : {}),
-  };
+  // No session tokens at registration: the user must verify their email,
+  // then log in. Auto-login here would make the login gate pointless.
+  return { user: toPublicUser(user) };
 }
 
 export async function login(input: LoginInput): Promise<AuthResult> {
@@ -132,6 +129,12 @@ export async function login(input: LoginInput): Promise<AuthResult> {
   // attacker could probe which emails have accounts.
   if (!user || !(await verifyPassword(input.password, user.passwordHash))) {
     throw ApiError.unauthorized('Invalid email or password');
+  }
+
+  // Only checked AFTER the password is right, so this response can't be
+  // used to probe which emails have accounts.
+  if (!user.emailVerifiedAt) {
+    throw ApiError.forbidden('Please verify your email before logging in');
   }
 
   const tokens = await issueTokens(user);
@@ -199,14 +202,12 @@ export async function verifyEmail(input: VerifyEmailInput): Promise<PublicUser> 
   return toPublicUser(user);
 }
 
-export async function resendVerification(
-  input: ResendVerificationInput,
-): Promise<{ verificationToken?: string }> {
+export async function resendVerification(input: ResendVerificationInput): Promise<void> {
   const user = await prisma.user.findUnique({ where: { email: input.email } });
 
-  // Same shape whether the account exists, is already verified, or is
-  // unknown — the response never reveals which emails are registered.
-  if (!user || user.emailVerifiedAt) return {};
+  // Same response whether the account exists, is already verified, or is
+  // unknown — the endpoint never reveals which emails are registered.
+  if (!user || user.emailVerifiedAt) return;
 
   // Invalidate older unused tokens so only the newest link works.
   await prisma.emailVerificationToken.updateMany({
@@ -219,18 +220,15 @@ export async function resendVerification(
 
   if (env.NODE_ENV === 'development') {
     console.log(`[dev] Email verification token for ${user.email}: ${verificationToken}`);
-    return { verificationToken };
   }
-
-  return {};
 }
 
-export async function forgotPassword(input: ForgotPasswordInput): Promise<{ resetToken?: string }> {
+export async function forgotPassword(input: ForgotPasswordInput): Promise<void> {
   const user = await prisma.user.findUnique({ where: { email: input.email } });
 
   // Always respond success to the client (don't reveal which emails exist),
   // but only create a token when the account is real.
-  if (!user) return {};
+  if (!user) return;
 
   const resetToken = generateOpaqueToken();
   await prisma.passwordResetToken.create({
@@ -245,10 +243,7 @@ export async function forgotPassword(input: ForgotPasswordInput): Promise<{ rese
 
   if (env.NODE_ENV === 'development') {
     console.log(`[dev] Password reset token for ${user.email}: ${resetToken}`);
-    return { resetToken };
   }
-
-  return {};
 }
 
 export async function resetPassword(input: ResetPasswordInput): Promise<void> {

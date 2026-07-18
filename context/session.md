@@ -18,8 +18,11 @@
 - **Email service built (Brevo)**: `src/lib/email/` — `brevo.provider.ts` (only file that knows Brevo's REST API; native fetch, no SDK) + `email.service.ts` (HTML templates + `sendSafely`: email is best-effort, a failed send is logged but NEVER thrown, so auth flows can't break). Wired into register + resend-verification (verification email) and forgot-password (reset email), fire-and-forget. Links point to `APP_URL` frontend routes `/verify-email?token=…` and `/reset-password?token=…`. New envs: BREVO_API_KEY, EMAIL_FROM_ADDRESS, EMAIL_FROM_NAME, APP_URL (all optional/defaulted; without key sends are skipped + logged). Dev token-in-response behavior kept.
 - **Live Brevo send BLOCKED on account settings**: API key present but Brevo 401s — "unrecognised IP address 105.112.124.69"; user must authorize the IP at https://app.brevo.com/security/authorised_ips (or disable authorised IPs). Sender is `no-reply@beatcircle.co` ("Beat Circle Mail") — that domain/sender must also be verified in Brevo. Fixed a var-name mismatch in the user's .env: `EMAIL_FROM_ADDR` → `EMAIL_FROM_ADDRESS`.
 
+- **Verification now GATES login (user decision, reversing the earlier V1 stopgap)**: register returns `{user, message}` only — no tokens, no cookie; login 403s until verified ("Please verify your email before logging in", checked AFTER the password so it can't probe accounts). Raw verification/reset tokens REMOVED from all API responses (were dev-only) — they travel by email, dev console still logs them. All 7 pre-existing users backfilled as verified (one-off updateMany, no migration). Swagger + both docs rewritten. E2E: register(no tokens)→login 403→verify→login 200; grandfathered login 200.
+
+- **Brevo live sending CONFIRMED WORKING** — user authorized the IP; probe send to their Gmail accepted (`[email] Sent`). Email delivery is now real in dev; dev console still logs tokens as a convenience.
+
 ### Next
-- User authorizes their IP (+ verifies sender) in Brevo → live-test verification + reset emails end to end.
 - Same as Session 3: API credits → live AI tests; deploy to Render (add the new email envs there too); rate limiting, notifications/settings/subscriptions/audit logs.
 
 ## Session 2 — 2026-07-16
