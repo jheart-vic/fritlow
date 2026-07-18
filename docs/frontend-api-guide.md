@@ -26,8 +26,8 @@ CORS note: the dev frontend origin must be in the server's `CORS_ORIGIN` env all
 
 | Method + path | Body | Success | Notes |
 |---|---|---|---|
-| `POST /register` | `{ fullName, email, password (min 8) }` | **201** `{ user, accessToken, verificationToken? }` + cookie | 409 if email taken. Also creates the user's personal workspace. `verificationToken` is dev-only |
-| `POST /login` | `{ email, password }` | **200** `{ user, accessToken }` + cookie | 401 on bad credentials (same error for wrong email vs wrong password) |
+| `POST /register` | `{ fullName, email, password (min 8) }` | **201** `{ user, message }` — **no tokens, no cookie** | 409 if email taken. Creates the user + personal workspace and emails a verification link. The user must verify, then log in |
+| `POST /login` | `{ email, password }` | **200** `{ user, accessToken }` + cookie | 401 on bad credentials (same error for wrong email vs wrong password). **403 if the email is not verified yet** — show a "verify first" screen with a resend button |
 | `POST /refresh` | `{}` (cookie) or `{ refreshToken }` fallback | **200** `{ accessToken }` + new cookie | Old refresh token is revoked — a replayed one 401s |
 | `POST /logout` | `{}` (cookie) | **204**, cookie cleared | |
 | `GET /me` | — (Bearer required) | **200** `{ user }` | Call on app boot to restore the session |
@@ -42,7 +42,7 @@ The `user` object everywhere:
 { "id": "uuid", "email": "…", "fullName": "…", "emailVerified": false, "createdAt": "…" }
 ```
 
-If `emailVerified` is false, show a "verify your email" banner with a resend button — verification does **not** block anything in V1.
+**Verification gates login**: register → "check your email" screen → user clicks the emailed link (frontend route `/verify-email?token=…` POSTs it to the API) → login. A 403 from login means unverified — offer the resend button. Tokens travel by email only; in dev the server console also logs them for testing.
 
 ---
 
@@ -200,7 +200,7 @@ The "what should I do next?" screen in one call:
 Validation failures (400 from zod) add a `details` array of per-field messages. Status codes to handle globally:
 
 - **401** → try refresh, then login screen
-- **403** → "you don't have access to this project"
+- **403** → from login: email not verified; elsewhere: "you don't have access to this project"
 - **404** → resource gone / not created yet (often an expected state, e.g. no blueprint yet)
 - **409** → already exists (duplicate email, session/blueprint already created)
 - **503** → AI not configured on the server; **502** → AI provider failed. Show "AI is unavailable, try again later" — everything non-AI keeps working
@@ -222,11 +222,13 @@ if (j.project) pm.environment.set("projectId", j.project.id);
 
 **1. Register** — `POST {{baseUrl}}/api/v1/auth/register`
 `{ "fullName": "PM Tester", "email": "pm-run1@fritlow.dev", "password": "test-pass-123" }`
-→ 201, save `accessToken`. Use a fresh email per run (409 otherwise). Existing dev accounts: `test@agmund.dev` / `test-password-123`, `second@fritlow.dev` / `another-pass-456`.
+→ 201 `{ user, message }` — **no tokens**. Use a fresh email per run (409 otherwise). Existing verified dev accounts: `test@agmund.dev` / `test-password-123`, `second@fritlow.dev` / `another-pass-456`.
 
-**2. Verify email** — `POST …/auth/verify-email` `{ "token": "{{verifyToken}}" }` → 200, `emailVerified: true`. (Full edge-case matrix in [auth-email-verification.md](auth-email-verification.md).)
+**2. Login before verifying** → `POST …/auth/login` with the same credentials → **403** "Please verify your email before logging in".
 
-**3. Session sanity** — `GET …/auth/me` with the Bearer token → 200. Without it → 401. `POST …/auth/refresh` with empty body → 200 new `accessToken` (cookie did the work).
+**3. Verify email** — copy the token from the **server console** (`[dev] Email verification token for …`) or from the emailed link, then `POST …/auth/verify-email` `{ "token": "<paste>" }` → 200, `emailVerified: true`. Now login → 200, save `accessToken`. (Full edge-case matrix in [auth-email-verification.md](auth-email-verification.md).)
+
+**3b. Session sanity** — `GET …/auth/me` with the Bearer token → 200. Without it → 401. `POST …/auth/refresh` with empty body → 200 new `accessToken` (cookie did the work).
 
 **4. Create a project** — `POST …/api/v1/projects`
 `{ "name": "Test Product", "oneLineIdea": "An app that tests other apps" }`

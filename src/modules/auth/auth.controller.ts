@@ -35,9 +35,13 @@ function readRefreshToken(req: Request): string {
 }
 
 export async function register(req: Request, res: Response) {
-  const { refreshToken, ...result } = await authService.register(req.body);
-  setRefreshCookie(res, refreshToken);
-  res.status(201).json(result);
+  // No cookie, no access token: the account exists but can't log in until
+  // the email is verified.
+  const result = await authService.register(req.body);
+  res.status(201).json({
+    ...result,
+    message: 'Account created. Check your email for a verification link.',
+  });
 }
 
 export async function login(req: Request, res: Response) {
@@ -70,18 +74,16 @@ export async function verifyEmail(req: Request, res: Response) {
 }
 
 export async function resendVerification(req: Request, res: Response) {
-  const result = await authService.resendVerification(req.body);
+  await authService.resendVerification(req.body);
   res.status(200).json({
     message: 'If an unverified account exists for that email, a verification link has been sent.',
-    ...result,
   });
 }
 
 export async function forgotPassword(req: Request, res: Response) {
-  const result = await authService.forgotPassword(req.body);
+  await authService.forgotPassword(req.body);
   res.status(200).json({
     message: 'If an account exists for that email, a reset link has been sent.',
-    ...result,
   });
 }
 

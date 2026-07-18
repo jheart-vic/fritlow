@@ -20,7 +20,7 @@ export const authRouter = Router();
  *   post:
  *     tags: [Auth]
  *     summary: Create an account
- *     description: Registers a user, creates their personal workspace, and returns tokens.
+ *     description: Registers a user, creates their personal workspace, and emails a verification link. No session tokens are issued — the user must verify their email, then log in.
  *     requestBody:
  *       required: true
  *       content:
@@ -34,10 +34,14 @@ export const authRouter = Router();
  *               password: { type: string, format: password, minLength: 8, example: "s3cret-pass" }
  *     responses:
  *       201:
- *         description: Account created
+ *         description: Account created — verification email sent
  *         content:
  *           application/json:
- *             schema: { $ref: '#/components/schemas/AuthResult' }
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 user: { $ref: '#/components/schemas/User' }
+ *                 message: { type: string }
  *       400: { $ref: '#/components/responses/ValidationError' }
  *       409:
  *         description: Email already registered
@@ -72,6 +76,11 @@ authRouter.post('/register', validateBody(registerSchema), authController.regist
  *       400: { $ref: '#/components/responses/ValidationError' }
  *       401:
  *         description: Invalid credentials
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *       403:
+ *         description: Email not verified yet
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/Error' }
@@ -161,7 +170,7 @@ authRouter.get('/me', requireAuth, authController.me);
  *   post:
  *     tags: [Auth]
  *     summary: Verify the account's email address
- *     description: Consumes the single-use token from the verification email (issued at registration or via resend). Sets `emailVerified` on the user. Verification does not gate login in V1.
+ *     description: Consumes the single-use token from the verification email (issued at registration or via resend). Sets `emailVerified` on the user — required before login works.
  *     requestBody:
  *       required: true
  *       content:
@@ -195,7 +204,7 @@ authRouter.post('/verify-email', validateBody(verifyEmailSchema), authController
  *   post:
  *     tags: [Auth]
  *     summary: Request a fresh email verification token
- *     description: Always returns 200 so attackers can't discover which emails exist. Older unused tokens are invalidated — only the newest link works. In development the token is included in the response (email delivery not wired up yet).
+ *     description: Always returns 200 so attackers can't discover which emails exist. Older unused tokens are invalidated — only the newest link works. The token travels by email only (dev servers also log it to the console).
  *     requestBody:
  *       required: true
  *       content:
@@ -216,7 +225,7 @@ authRouter.post('/resend-verification', validateBody(resendVerificationSchema), 
  *   post:
  *     tags: [Auth]
  *     summary: Request a password reset token
- *     description: Always returns 200 so attackers can't discover which emails exist. In development the token is included in the response (email delivery not wired up yet).
+ *     description: Always returns 200 so attackers can't discover which emails exist. The reset token travels by email only (dev servers also log it to the console).
  *     requestBody:
  *       required: true
  *       content:
