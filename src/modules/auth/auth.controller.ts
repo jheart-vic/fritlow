@@ -64,6 +64,19 @@ export async function me(req: Request, res: Response) {
   res.status(200).json({ user });
 }
 
+export async function verifyEmail(req: Request, res: Response) {
+  const user = await authService.verifyEmail(req.body);
+  res.status(200).json({ message: 'Email verified.', user });
+}
+
+export async function resendVerification(req: Request, res: Response) {
+  const result = await authService.resendVerification(req.body);
+  res.status(200).json({
+    message: 'If an unverified account exists for that email, a verification link has been sent.',
+    ...result,
+  });
+}
+
 export async function forgotPassword(req: Request, res: Response) {
   const result = await authService.forgotPassword(req.body);
   res.status(200).json({

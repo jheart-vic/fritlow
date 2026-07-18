@@ -7,7 +7,9 @@ import {
   loginSchema,
   refreshSchema,
   registerSchema,
+  resendVerificationSchema,
   resetPasswordSchema,
+  verifyEmailSchema,
 } from './auth.schemas';
 
 export const authRouter = Router();
@@ -152,6 +154,61 @@ authRouter.post('/logout', validateBody(refreshSchema), authController.logout);
  *             schema: { $ref: '#/components/schemas/Error' }
  */
 authRouter.get('/me', requireAuth, authController.me);
+
+/**
+ * @openapi
+ * /api/v1/auth/verify-email:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Verify the account's email address
+ *     description: Consumes the single-use token from the verification email (issued at registration or via resend). Sets `emailVerified` on the user. Verification does not gate login in V1.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [token]
+ *             properties:
+ *               token: { type: string }
+ *     responses:
+ *       200:
+ *         description: Email verified
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message: { type: string }
+ *                 user: { $ref: '#/components/schemas/User' }
+ *       400:
+ *         description: Invalid or expired verification token
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ */
+authRouter.post('/verify-email', validateBody(verifyEmailSchema), authController.verifyEmail);
+
+/**
+ * @openapi
+ * /api/v1/auth/resend-verification:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Request a fresh email verification token
+ *     description: Always returns 200 so attackers can't discover which emails exist. Older unused tokens are invalidated — only the newest link works. In development the token is included in the response (email delivery not wired up yet).
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email]
+ *             properties:
+ *               email: { type: string, format: email }
+ *     responses:
+ *       200: { description: "Verification requested (link emailed if an unverified account exists)" }
+ */
+authRouter.post('/resend-verification', validateBody(resendVerificationSchema), authController.resendVerification);
 
 /**
  * @openapi

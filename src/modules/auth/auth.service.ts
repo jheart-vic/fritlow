@@ -1,5 +1,9 @@
 import { prisma } from '../../lib/prisma';
 import { env } from '../../config/env';
+import {
+  sendPasswordResetEmail,
+  sendVerificationEmail,
+} from '../../lib/email/email.service';
 import { ApiError } from '../../utils/api-error';
 import { hashPassword, verifyPassword } from '../../utils/password';
 import {
@@ -11,16 +15,20 @@ import type {
   ForgotPasswordInput,
   LoginInput,
   RegisterInput,
+  ResendVerificationInput,
   ResetPasswordInput,
+  VerifyEmailInput,
 } from './auth.schemas';
 
 const RESET_TOKEN_TTL_MINUTES = 30;
+const VERIFY_TOKEN_TTL_HOURS = 24;
 
 // Shape returned to clients — never includes passwordHash.
 export interface PublicUser {
   id: string;
   email: string;
   fullName: string;
+  emailVerified: boolean;
   createdAt: Date;
 }
 
@@ -28,10 +36,38 @@ export interface AuthResult {
   user: PublicUser;
   accessToken: string;
   refreshToken: string;
+  // Dev-only convenience until email delivery exists.
+  verificationToken?: string;
 }
 
-function toPublicUser(user: { id: string; email: string; fullName: string; createdAt: Date }): PublicUser {
-  return { id: user.id, email: user.email, fullName: user.fullName, createdAt: user.createdAt };
+function toPublicUser(user: {
+  id: string;
+  email: string;
+  fullName: string;
+  emailVerifiedAt: Date | null;
+  createdAt: Date;
+}): PublicUser {
+  return {
+    id: user.id,
+    email: user.email,
+    fullName: user.fullName,
+    emailVerified: user.emailVerifiedAt !== null,
+    createdAt: user.createdAt,
+  };
+}
+
+// Creates a fresh verification token for the user (stored hashed, like all
+// token tables). Returns the raw token — that's what goes in the email link.
+async function issueVerificationToken(userId: string): Promise<string> {
+  const token = generateOpaqueToken();
+  await prisma.emailVerificationToken.create({
+    data: {
+      tokenHash: hashToken(token),
+      userId,
+      expiresAt: new Date(Date.now() + VERIFY_TOKEN_TTL_HOURS * 60 * 60 * 1000),
+    },
+  });
+  return token;
 }
 
 // Creates the short-lived JWT and a long-lived refresh token (stored hashed).
@@ -73,8 +109,20 @@ export async function register(input: RegisterInput): Promise<AuthResult> {
     return created;
   });
 
+  const verificationToken = await issueVerificationToken(user.id);
+  // Fire-and-forget: sendSafely never throws, and registration must not
+  // wait on (or fail because of) the email provider.
+  void sendVerificationEmail({ email: user.email, name: user.fullName }, verificationToken);
+  if (env.NODE_ENV === 'development') {
+    console.log(`[dev] Email verification token for ${user.email}: ${verificationToken}`);
+  }
+
   const tokens = await issueTokens(user);
-  return { user: toPublicUser(user), ...tokens };
+  return {
+    user: toPublicUser(user),
+    ...tokens,
+    ...(env.NODE_ENV === 'development' ? { verificationToken } : {}),
+  };
 }
 
 export async function login(input: LoginInput): Promise<AuthResult> {
@@ -126,6 +174,57 @@ export async function getMe(userId: string): Promise<PublicUser> {
   return toPublicUser(user);
 }
 
+export async function verifyEmail(input: VerifyEmailInput): Promise<PublicUser> {
+  const stored = await prisma.emailVerificationToken.findUnique({
+    where: { tokenHash: hashToken(input.token) },
+  });
+
+  if (!stored || stored.usedAt || stored.expiresAt < new Date()) {
+    throw ApiError.badRequest('Invalid or expired verification token');
+  }
+
+  // Mark the user verified and burn the token together — a token can never
+  // be spent without the user actually flipping to verified, and vice versa.
+  const [user] = await prisma.$transaction([
+    prisma.user.update({
+      where: { id: stored.userId },
+      data: { emailVerifiedAt: new Date() },
+    }),
+    prisma.emailVerificationToken.update({
+      where: { id: stored.id },
+      data: { usedAt: new Date() },
+    }),
+  ]);
+
+  return toPublicUser(user);
+}
+
+export async function resendVerification(
+  input: ResendVerificationInput,
+): Promise<{ verificationToken?: string }> {
+  const user = await prisma.user.findUnique({ where: { email: input.email } });
+
+  // Same shape whether the account exists, is already verified, or is
+  // unknown — the response never reveals which emails are registered.
+  if (!user || user.emailVerifiedAt) return {};
+
+  // Invalidate older unused tokens so only the newest link works.
+  await prisma.emailVerificationToken.updateMany({
+    where: { userId: user.id, usedAt: null },
+    data: { usedAt: new Date() },
+  });
+
+  const verificationToken = await issueVerificationToken(user.id);
+  void sendVerificationEmail({ email: user.email, name: user.fullName }, verificationToken);
+
+  if (env.NODE_ENV === 'development') {
+    console.log(`[dev] Email verification token for ${user.email}: ${verificationToken}`);
+    return { verificationToken };
+  }
+
+  return {};
+}
+
 export async function forgotPassword(input: ForgotPasswordInput): Promise<{ resetToken?: string }> {
   const user = await prisma.user.findUnique({ where: { email: input.email } });
 
@@ -142,8 +241,8 @@ export async function forgotPassword(input: ForgotPasswordInput): Promise<{ rese
     },
   });
 
-  // TODO: send the token by email once an email provider is wired up.
-  // Until then, expose it in development so the flow can be tested.
+  void sendPasswordResetEmail({ email: user.email, name: user.fullName }, resetToken);
+
   if (env.NODE_ENV === 'development') {
     console.log(`[dev] Password reset token for ${user.email}: ${resetToken}`);
     return { resetToken };
