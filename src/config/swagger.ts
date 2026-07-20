@@ -50,6 +50,15 @@ export const swaggerSpec = swaggerJsdoc({
             },
           },
         },
+        Workspace: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            name: { type: 'string' },
+            createdAt: { type: 'string', format: 'date-time' },
+            updatedAt: { type: 'string', format: 'date-time' },
+          },
+        },
         Project: {
           type: 'object',
           properties: {
@@ -190,6 +199,22 @@ export const swaggerSpec = swaggerJsdoc({
         },
       },
       responses: {
+        RateLimited: {
+          description:
+            'Too many requests — rate limit exceeded. The `Retry-After` header ' +
+            '(seconds) and the `RateLimit-*` headers tell the client when to try again.',
+          headers: {
+            'Retry-After': {
+              description: 'Seconds to wait before retrying',
+              schema: { type: 'integer' },
+            },
+          },
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/Error' },
+            },
+          },
+        },
         ValidationError: {
           description: 'Request body failed validation',
           content: {

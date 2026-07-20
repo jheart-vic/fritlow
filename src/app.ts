@@ -14,10 +14,19 @@ import { discoveryRouter } from './modules/discovery/discovery.routes';
 import { exportRouter } from './modules/exports/export.routes';
 import { healthScoreRouter } from './modules/health/health.routes';
 import { projectRouter } from './modules/projects/project.routes';
+import { settingsRouter } from './modules/settings/settings.routes';
 
 // app.ts builds the Express app (middleware + routes) without starting it,
 // so tests can import the app without opening a network port.
 export const app = express();
+
+// Behind a proxy (Render/Nginx) the real client IP is in X-Forwarded-For, not
+// the socket. Tell Express how many hops to trust so req.ip — and therefore the
+// rate limiter's per-client buckets — reflect the actual caller. 0 (default,
+// local dev) means "trust no proxy, use the socket address".
+if (env.TRUST_PROXY_HOPS > 0) {
+  app.set('trust proxy', env.TRUST_PROXY_HOPS);
+}
 
 // Security headers, cross-origin access for the frontend, JSON body parsing.
 // credentials: true lets the browser send the httpOnly refresh cookie, which
@@ -50,6 +59,7 @@ app.use('/api/v1/projects/:projectId/decisions', decisionRouter);
 app.use('/api/v1/projects/:projectId/export', exportRouter);
 app.use('/api/v1/projects/:projectId/health-score', healthScoreRouter);
 app.use('/api/v1/dashboard', dashboardRouter);
+app.use('/api/v1/settings', settingsRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

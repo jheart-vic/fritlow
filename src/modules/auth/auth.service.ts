@@ -38,7 +38,9 @@ export interface AuthResult {
   refreshToken: string;
 }
 
-function toPublicUser(user: {
+// The canonical user serialization — exported so other modules (e.g. settings)
+// return the exact same shape instead of re-deriving it.
+export function toPublicUser(user: {
   id: string;
   email: string;
   fullName: string;
