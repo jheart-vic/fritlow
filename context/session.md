@@ -8,6 +8,13 @@
 ## Session 5 — 2026-07-20
 
 ### Done
+- **Settings module built** (feature complete) — new `src/modules/settings/` following routes → controller → service → Prisma. Three endpoints, all behind requireAuth under `/api/v1/settings`:
+  - `PATCH /profile` — update own `fullName` (email deliberately excluded from V1: would need re-verification). Returns `{ user }` via the shared serializer.
+  - `POST /password` — change password while logged in: verifies `currentPassword` (wrong → 401), hashes new, and revokes ALL sessions in a transaction (same rule as reset-password). Returns "Password updated. Please log in again."
+  - `PATCH /workspaces/:workspaceId` — rename a workspace; reuses the projects tenancy gate (must be a member; only OWNER/ADMIN may rename → 403 otherwise). Returns `{ workspace }`.
+- Exported `toPublicUser` from auth.service (was private) so settings serializes users identically — one source of truth for the user shape. Added a `Workspace` schema to swagger.ts components.
+- Mounted `app.use('/api/v1/settings', settingsRouter)`. OpenAPI blocks on all 3 routes; frontend guide got new §9 Settings (Errors→§10, Rate limiting→§11).
+- E2E verified against dev server (register→verify→login→settings): profile update 200 + name changed; profile 1-char name 400; no-auth 401; workspace rename (owner) 200; rename non-member workspace 403; password change wrong-current 401; correct 200; then login with OLD password 401 + NEW password 200 (proves session revocation + new hash). typecheck clean. (Left one test user `settings-test-*@example.com` + a "Temp" project in the dev DB.)
 - **Rate limiting built** (feature complete) using `express-rate-limit` v8 (in-memory store). New `src/middleware/rate-limit.ts`: a `buildLimiter` factory + two limiters — `authLimiter` (10 / 15 min: login, register, refresh, verify-email, reset-password — brute-force/token-guessing) and `emailLimiter` (3 / hour: resend-verification, forgot-password — strictest, each spends real Brevo quota). Applied as the first middleware on each route (before validateBody, fails fast, no DB touched).
 - **429 contract**: custom handler returns the standard `{ error }` JSON + `Retry-After` header (seconds to reset, computed from `req.rateLimit.resetTime`); `standardHeaders: 'draft-8'` emits `RateLimit`/`RateLimit-Policy`, `legacyHeaders: false`. Limiter is skipped when `NODE_ENV=test` or `RATE_LIMIT_ENABLED=false`.
 - **Config**: new envs (all defaulted) — `RATE_LIMIT_ENABLED`, `AUTH_RATE_LIMIT_WINDOW_MIN/MAX`, `EMAIL_RATE_LIMIT_WINDOW_MIN/MAX`, `TRUST_PROXY_HOPS`. app.ts sets `trust proxy` to `TRUST_PROXY_HOPS` when >0 so `req.ip` (the limiter bucket key) is the real client behind a proxy.
@@ -15,10 +22,9 @@
 - Docs updated: OpenAPI (new reusable `#/components/responses/RateLimited` in swagger.ts + `429` on all 7 auth routes), `docs/frontend-api-guide.md` (new §10 + 429 in the global error list), `.env.example`.
 - E2E verified against the running dev server: forgot-password 3× → 200, 4th/5th → 429 with `Retry-After: 3589` and `RateLimit: "3-in-1hr"; r=0; t=3589`. typecheck clean.
 
-### Next (queue unchanged — see feature.md)
-1. **Settings module** (now ACTIVE) — profile update (name), password change while logged in, workspace rename. Backs the Settings screen.
-2. Notifications — challenge scope first; dashboard nextAction may cover it, possibly cut for V1.
-3. Subscriptions/billing + audit logs — post-deploy.
+### Next (see feature.md)
+1. **Notifications** (now ACTIVE next) — CHALLENGE BEFORE BUILDING: dashboard `nextAction` may already cover the V1 need; decide whether to cut.
+2. Subscriptions/billing + audit logs — post-deploy.
 - Still blocked on user, in parallel: Render deploy (remember `TRUST_PROXY_HOPS=1` + email envs + authorize Render IPs in Brevo) and Anthropic credits → live AI tests.
 
 ## Session 4 — 2026-07-18

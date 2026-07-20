@@ -50,6 +50,15 @@ export const swaggerSpec = swaggerJsdoc({
             },
           },
         },
+        Workspace: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            name: { type: 'string' },
+            createdAt: { type: 'string', format: 'date-time' },
+            updatedAt: { type: 'string', format: 'date-time' },
+          },
+        },
         Project: {
           type: 'object',
           properties: {

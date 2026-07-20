@@ -14,6 +14,7 @@ import { discoveryRouter } from './modules/discovery/discovery.routes';
 import { exportRouter } from './modules/exports/export.routes';
 import { healthScoreRouter } from './modules/health/health.routes';
 import { projectRouter } from './modules/projects/project.routes';
+import { settingsRouter } from './modules/settings/settings.routes';
 
 // app.ts builds the Express app (middleware + routes) without starting it,
 // so tests can import the app without opening a network port.
@@ -58,6 +59,7 @@ app.use('/api/v1/projects/:projectId/decisions', decisionRouter);
 app.use('/api/v1/projects/:projectId/export', exportRouter);
 app.use('/api/v1/projects/:projectId/health-score', healthScoreRouter);
 app.use('/api/v1/dashboard', dashboardRouter);
+app.use('/api/v1/settings', settingsRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

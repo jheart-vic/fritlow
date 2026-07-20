@@ -2,18 +2,18 @@
 
 > Update this file whenever the active feature changes. One feature in focus at a time.
 
-## Active: Settings module (next up — agreed 2026-07-18)
+## Active: Notifications — CHALLENGE BEFORE BUILDING (next up)
 
-Scope: profile update (name), password change while logged in, workspace rename. Small; backs the Settings screen (a supporting surface in MVP scope). Follows the routes → controllers → services → Prisma layering; add OpenAPI blocks + frontend-guide entries. Password change should verify the current password and (like reset-password) revoke existing sessions.
+Decide whether this is even needed for V1 before writing code: the dashboard `nextAction` endpoint may already cover the "what should I do next?" need the notifications feature was meant to serve. If it's redundant, cut it for V1 and jump to post-deploy items. Raise this with the user first.
 
-### Done last session — Rate limiting (2026-07-20)
+### Done recently (2026-07-20, Session 5)
 
-`express-rate-limit` v8 on the auth routes: `authLimiter` (10/15min on login/register/refresh/verify-email/reset-password) and `emailLimiter` (3/hour on resend-verification/forgot-password — each spends real Brevo quota). 429 + `Retry-After` + draft-8 `RateLimit-*` headers. Config via env (`*_RATE_LIMIT_*`, `RATE_LIMIT_ENABLED`, `TRUST_PROXY_HOPS`). **Deploy reminder: set `TRUST_PROXY_HOPS=1` behind Render's proxy; swap the in-memory store for Redis once >1 instance.** See session.md Session 5.
+- **Settings module** — `src/modules/settings/`: `PATCH /profile` (name), `POST /password` (verify current, revoke all sessions), `PATCH /workspaces/:workspaceId` (OWNER/ADMIN only). OpenAPI + frontend-guide §9. E2E verified. `toPublicUser` now exported from auth.service; `Workspace` schema added to swagger.
+- **Rate limiting** — `express-rate-limit` v8: `authLimiter` (10/15min on login/register/refresh/verify-email/reset-password) + `emailLimiter` (3/hour on resend-verification/forgot-password). 429 + `Retry-After` + draft-8 headers; env-configurable. **Deploy reminder: set `TRUST_PROXY_HOPS=1` behind Render's proxy; swap in-memory store for Redis once >1 instance.**
 
-### Prioritized queue after Settings (agreed 2026-07-18)
+### Prioritized queue after Notifications (agreed 2026-07-18)
 
-1. **Notifications** — CHALLENGE BEFORE BUILDING: dashboard `nextAction` may already cover the V1 need; possibly cut.
-2. **Subscriptions/billing + audit logs** — nothing in the five core screens depends on them; after deploy.
+1. **Subscriptions/billing + audit logs** — nothing in the five core screens depends on them; after deploy.
 
 ### Non-feature items competing for attention (both currently blocked on the user)
 
@@ -31,8 +31,8 @@ Scope: profile update (name), password change while logged in, workspace rename.
 - [x] Dashboard/next-action endpoint + [x] Product Health Score (AI-graded, 5 dimensions; untested pending credits)
 - [x] Email service (Brevo, `src/lib/email/` — best-effort sends, provider isolated in one file)
 - [x] Rate limiting (express-rate-limit v8; authLimiter 10/15min + emailLimiter 3/hr; 429 + Retry-After + draft-8 headers; env-configurable; TRUST_PROXY_HOPS for prod)
-- [ ] **Settings (profile update, password change, workspace rename)** ← ACTIVE
-- [ ] Notifications (challenge scope first — may be cut for V1)
+- [x] Settings (profile name update, password change w/ session revocation, workspace rename — OWNER/ADMIN)
+- [ ] **Notifications (challenge scope first — may be cut for V1)** ← ACTIVE
 - [ ] Subscriptions/billing, audit logs
 
 ### Docs to keep current with any API change

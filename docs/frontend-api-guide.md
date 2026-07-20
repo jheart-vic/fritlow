@@ -191,7 +191,17 @@ The "what should I do next?" screen in one call:
 
 ---
 
-## 9. Errors — one shape everywhere
+## 9. Settings — `/api/v1/settings` (Bearer required)
+
+Backs the Settings screen. All three act on the authenticated user.
+
+- **`PATCH /profile`** — update your own display name. Body `{ "fullName": "Ada Lovelace" }` → `{ user }`. (Email changes are out of scope for V1 — they'd need re-verification.)
+- **`POST /password`** — change your password while logged in. Body `{ "currentPassword": "…", "newPassword": "…" }`. Verifies the current password (wrong → **401**), then **revokes every session** (all refresh tokens). After this call the refresh cookie is dead, so route the user back to login — the success message is "Password updated. Please log in again."
+- **`PATCH /workspaces/:workspaceId`** — rename a workspace you belong to. Body `{ "name": "Acme Product Team" }` → `{ workspace }`. Only **OWNER/ADMIN** may rename (others get **403**). You can read a `workspaceId` off any project (`project.workspaceId`).
+
+---
+
+## 10. Errors — one shape everywhere
 
 ```json
 { "error": "Human-readable message" }
@@ -208,7 +218,7 @@ Validation failures (400 from zod) add a `details` array of per-field messages. 
 
 ---
 
-## 10. Rate limiting (auth endpoints only)
+## 11. Rate limiting (auth endpoints only)
 
 The unauthenticated auth endpoints are rate limited per client IP. Over the limit, the API returns **429** with the standard error shape and these response headers:
 
