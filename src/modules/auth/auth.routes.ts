@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { requireAuth } from '../../middleware/auth';
+import { authLimiter, emailLimiter } from '../../middleware/rate-limit';
 import { validateBody } from '../../middleware/validate';
 import * as authController from './auth.controller';
 import {
@@ -48,8 +49,9 @@ export const authRouter = Router();
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/Error' }
+ *       429: { $ref: '#/components/responses/RateLimited' }
  */
-authRouter.post('/register', validateBody(registerSchema), authController.register);
+authRouter.post('/register', authLimiter, validateBody(registerSchema), authController.register);
 
 /**
  * @openapi
@@ -84,8 +86,9 @@ authRouter.post('/register', validateBody(registerSchema), authController.regist
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/Error' }
+ *       429: { $ref: '#/components/responses/RateLimited' }
  */
-authRouter.post('/login', validateBody(loginSchema), authController.login);
+authRouter.post('/login', authLimiter, validateBody(loginSchema), authController.login);
 
 /**
  * @openapi
@@ -116,8 +119,9 @@ authRouter.post('/login', validateBody(loginSchema), authController.login);
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/Error' }
+ *       429: { $ref: '#/components/responses/RateLimited' }
  */
-authRouter.post('/refresh', validateBody(refreshSchema), authController.refresh);
+authRouter.post('/refresh', authLimiter, validateBody(refreshSchema), authController.refresh);
 
 /**
  * @openapi
@@ -195,8 +199,9 @@ authRouter.get('/me', requireAuth, authController.me);
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/Error' }
+ *       429: { $ref: '#/components/responses/RateLimited' }
  */
-authRouter.post('/verify-email', validateBody(verifyEmailSchema), authController.verifyEmail);
+authRouter.post('/verify-email', authLimiter, validateBody(verifyEmailSchema), authController.verifyEmail);
 
 /**
  * @openapi
@@ -216,8 +221,9 @@ authRouter.post('/verify-email', validateBody(verifyEmailSchema), authController
  *               email: { type: string, format: email }
  *     responses:
  *       200: { description: "Verification requested (link emailed if an unverified account exists)" }
+ *       429: { $ref: '#/components/responses/RateLimited' }
  */
-authRouter.post('/resend-verification', validateBody(resendVerificationSchema), authController.resendVerification);
+authRouter.post('/resend-verification', emailLimiter, validateBody(resendVerificationSchema), authController.resendVerification);
 
 /**
  * @openapi
@@ -237,8 +243,9 @@ authRouter.post('/resend-verification', validateBody(resendVerificationSchema), 
  *               email: { type: string, format: email }
  *     responses:
  *       200: { description: "Reset requested (token emailed if the account exists)" }
+ *       429: { $ref: '#/components/responses/RateLimited' }
  */
-authRouter.post('/forgot-password', validateBody(forgotPasswordSchema), authController.forgotPassword);
+authRouter.post('/forgot-password', emailLimiter, validateBody(forgotPasswordSchema), authController.forgotPassword);
 
 /**
  * @openapi
@@ -264,5 +271,6 @@ authRouter.post('/forgot-password', validateBody(forgotPasswordSchema), authCont
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/Error' }
+ *       429: { $ref: '#/components/responses/RateLimited' }
  */
-authRouter.post('/reset-password', validateBody(resetPasswordSchema), authController.resetPassword);
+authRouter.post('/reset-password', authLimiter, validateBody(resetPasswordSchema), authController.resetPassword);

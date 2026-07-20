@@ -33,6 +33,25 @@ const envSchema = z.object({
   // Frontend base URL used to build the links inside emails
   // (verify-email, reset-password pages live in the Nuxt app).
   APP_URL: z.url().default('http://localhost:3000'),
+  // Rate limiting. Disabled automatically under NODE_ENV=test so the suite
+  // isn't throttled; this flag lets you also turn it off in dev if it gets in
+  // the way of manual testing. Windows are in minutes, limits are request
+  // counts per window per client IP.
+  RATE_LIMIT_ENABLED: z
+    .string()
+    .default('true')
+    .transform((v) => v === 'true'),
+  // Login/register/token endpoints — brute-force + junk-account protection.
+  AUTH_RATE_LIMIT_WINDOW_MIN: z.coerce.number().int().positive().default(15),
+  AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
+  // Email-sending endpoints (resend-verification, forgot-password) — strictest,
+  // because these are unauthenticated and each hit spends real Brevo quota.
+  EMAIL_RATE_LIMIT_WINDOW_MIN: z.coerce.number().int().positive().default(60),
+  EMAIL_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(3),
+  // How many proxy hops sit in front of the API (Render/Nginx = 1). Tells
+  // Express to trust that many X-Forwarded-For entries so req.ip is the real
+  // client, not the proxy — otherwise every request shares one bucket.
+  TRUST_PROXY_HOPS: z.coerce.number().int().nonnegative().default(0),
 });
 
 const parsed = envSchema.safeParse(process.env);

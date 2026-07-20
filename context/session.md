@@ -5,6 +5,22 @@
 
 ---
 
+## Session 5 — 2026-07-20
+
+### Done
+- **Rate limiting built** (feature complete) using `express-rate-limit` v8 (in-memory store). New `src/middleware/rate-limit.ts`: a `buildLimiter` factory + two limiters — `authLimiter` (10 / 15 min: login, register, refresh, verify-email, reset-password — brute-force/token-guessing) and `emailLimiter` (3 / hour: resend-verification, forgot-password — strictest, each spends real Brevo quota). Applied as the first middleware on each route (before validateBody, fails fast, no DB touched).
+- **429 contract**: custom handler returns the standard `{ error }` JSON + `Retry-After` header (seconds to reset, computed from `req.rateLimit.resetTime`); `standardHeaders: 'draft-8'` emits `RateLimit`/`RateLimit-Policy`, `legacyHeaders: false`. Limiter is skipped when `NODE_ENV=test` or `RATE_LIMIT_ENABLED=false`.
+- **Config**: new envs (all defaulted) — `RATE_LIMIT_ENABLED`, `AUTH_RATE_LIMIT_WINDOW_MIN/MAX`, `EMAIL_RATE_LIMIT_WINDOW_MIN/MAX`, `TRUST_PROXY_HOPS`. app.ts sets `trust proxy` to `TRUST_PROXY_HOPS` when >0 so `req.ip` (the limiter bucket key) is the real client behind a proxy.
+- **DEPLOY NOTE**: set `TRUST_PROXY_HOPS=1` on Render (or wherever, behind their proxy) — otherwise every request shares one IP bucket and the whole site gets limited together. In-memory store is per-process; when we scale past one instance, swap to a Redis store (rate-limit-redis on the Upstash we add at deploy) or limits won't be shared across instances.
+- Docs updated: OpenAPI (new reusable `#/components/responses/RateLimited` in swagger.ts + `429` on all 7 auth routes), `docs/frontend-api-guide.md` (new §10 + 429 in the global error list), `.env.example`.
+- E2E verified against the running dev server: forgot-password 3× → 200, 4th/5th → 429 with `Retry-After: 3589` and `RateLimit: "3-in-1hr"; r=0; t=3589`. typecheck clean.
+
+### Next (queue unchanged — see feature.md)
+1. **Settings module** (now ACTIVE) — profile update (name), password change while logged in, workspace rename. Backs the Settings screen.
+2. Notifications — challenge scope first; dashboard nextAction may cover it, possibly cut for V1.
+3. Subscriptions/billing + audit logs — post-deploy.
+- Still blocked on user, in parallel: Render deploy (remember `TRUST_PROXY_HOPS=1` + email envs + authorize Render IPs in Brevo) and Anthropic credits → live AI tests.
+
 ## Session 4 — 2026-07-18
 
 ### Done
@@ -22,8 +38,12 @@
 
 - **Brevo live sending CONFIRMED WORKING** — user authorized the IP; probe send to their Gmail accepted (`[email] Sent`). Email delivery is now real in dev; dev console still logs tokens as a convenience.
 
-### Next
-- Same as Session 3: API credits → live AI tests; deploy to Render (add the new email envs there too); rate limiting, notifications/settings/subscriptions/audit logs.
+### Next (priorities agreed with user 2026-07-18 — reasoning in feature.md)
+1. **Rate limiting** (ACTIVE next feature) — urgent now that unauthenticated endpoints (resend-verification, forgot-password) trigger real Brevo emails; also brute-force protection on login/register.
+2. Settings module (profile update, password change, workspace rename).
+3. Notifications — challenge scope first; dashboard nextAction may already cover it, possibly cut for V1.
+4. Subscriptions/billing + audit logs — post-deploy.
+- In parallel, blocked on user: Render deploy (unblocks the frontend dev; add email envs + authorize Render IPs in Brevo) and Anthropic credits → live AI tests (follow-ups, blueprint sync+SSE, health score).
 
 ## Session 2 — 2026-07-16
 

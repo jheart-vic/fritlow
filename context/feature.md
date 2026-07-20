@@ -2,29 +2,40 @@
 
 > Update this file whenever the active feature changes. One feature in focus at a time.
 
-## Active: AI layer live-test, then Blueprint module
+## Active: Settings module (next up — agreed 2026-07-18)
 
-The AI layer is built (Anthropic, provider-agnostic, fully logged) with adaptive follow-ups as its first consumer — **blocked on the user adding `ANTHROPIC_API_KEY` to `.env`** for a live test. After that: the Blueprint module (JSONB sections, AI generation from discovery answers, health score, decision log).
+Scope: profile update (name), password change while logged in, workspace rename. Small; backs the Settings screen (a supporting surface in MVP scope). Follows the routes → controllers → services → Prisma layering; add OpenAPI blocks + frontend-guide entries. Password change should verify the current password and (like reset-password) revoke existing sessions.
 
-### Next concrete steps (in order)
-1. ~~Confirm database~~ — **DONE: PostgreSQL + Prisma** (2026-07-16).
-2. ~~Repo layout~~ — **DONE: this repo is backend-only**; frontend lives in a separate repo owned by another dev (2026-07-16).
-3. ~~Framework~~ — **DONE: PEN stack (Express + TypeScript + Prisma)**, not NestJS (2026-07-16).
-4. ~~Scaffold~~ — **DONE (2026-07-16)**: Express 5 + TS 7 backend with routes → controllers → services → models layout, zod validation, Swagger at /docs.
-5. **Lock the data model** — auth slice DONE (User, Workspace, WorkspaceMember, RefreshToken, PasswordResetToken). Still to add: Projects, Discovery Sessions/Answers, Blueprints/Sections, Recommendations, Decision Logs, Templates, Exports, Notifications, Subscriptions, Audit Logs.
-6. Draft the OpenAPI contract for core endpoints (auth, project CRUD, discovery, blueprint, recommendations, export) — **this is the handoff artifact for the frontend dev**, so keep it current.
-7. Stand up the AI provider abstraction (LiteLLM-style) behind one interface.
+### Done last session — Rate limiting (2026-07-20)
 
-### Feature backlog (MVP order, after bootstrap — backend/API deliverables)
-- [x] Auth module (JWT + refresh rotation, workspace tenancy foundation) — register/login/refresh/logout/me/forgot/reset + email verification (verify-email/resend-verification; **gates login** — register issues no tokens, login 403s until verified) + Brevo email delivery (verification + reset emails; live send pending Brevo IP authorization)
-- [x] Project CRUD + status states (Draft → Discovery → Blueprint Complete → Launched) — workspace-scoped with membership checks; delete = OWNER/ADMIN only
-- [x] Discovery Interview engine — deterministic skeleton (sessions, JSONB answers, question bank, progress/resume, lifecycle) — adaptive follow-ups, Challenge Mode, confidence scoring pending the AI layer
-- [x] Blueprint module (8 JSONB sections, AI generation from discovery transcript, living edits) + Decision Log CRUD — health score + impact analysis still TODO
-- [x] AI orchestration layer (provider-agnostic, full interaction logging via AiInteraction; Anthropic first provider; SSE streaming still TODO for blueprint generation)
-- [~] Async jobs — SSE streaming done (blueprint generation with live deltas); BullMQ deferred until Redis exists (Upstash at deploy)
+`express-rate-limit` v8 on the auth routes: `authLimiter` (10/15min on login/register/refresh/verify-email/reset-password) and `emailLimiter` (3/hour on resend-verification/forgot-password — each spends real Brevo quota). 429 + `Retry-After` + draft-8 `RateLimit-*` headers. Config via env (`*_RATE_LIMIT_*`, `RATE_LIMIT_ENABLED`, `TRUST_PROXY_HOPS`). **Deploy reminder: set `TRUST_PROXY_HOPS=1` behind Render's proxy; swap the in-memory store for Redis once >1 instance.** See session.md Session 5.
+
+### Prioritized queue after Settings (agreed 2026-07-18)
+
+1. **Notifications** — CHALLENGE BEFORE BUILDING: dashboard `nextAction` may already cover the V1 need; possibly cut.
+2. **Subscriptions/billing + audit logs** — nothing in the five core screens depends on them; after deploy.
+
+### Non-feature items competing for attention (both currently blocked on the user)
+
+- **Deploy to Render** — everything the frontend dev needs is built; a live URL unblocks THEM. Remember: new email env vars (BREVO_API_KEY, EMAIL_FROM_ADDRESS, EMAIL_FROM_NAME, APP_URL) + Render's outbound IPs need authorizing in Brevo (or disable the IP restriction). Full env list in session.md Session 3.
+- **Live AI tests** — blocked on Anthropic credits (console.anthropic.com, $5 min). Follow-ups, blueprint generation (sync + SSE), health score have NEVER run against the real model. Delete the seeded test blueprint on the "Fritlow" project first (else 409 on generate).
+
+### Feature backlog (MVP order — backend/API deliverables)
+- [x] Auth module (JWT + refresh rotation, workspace tenancy foundation) — register/login/refresh/logout/me/forgot/reset + email verification (**gates login** — register issues no tokens, login 403s until verified) + Brevo email delivery (verification + reset emails, live sending confirmed working 2026-07-18)
+- [x] Project CRUD + status states (Draft → Discovery → Blueprint Complete → Launched) — workspace-scoped with membership checks; delete = OWNER/ADMIN only; responses embed `createdBy {id, fullName, email}`
+- [x] Discovery Interview engine — deterministic skeleton (sessions, JSONB answers, 10-question bank, progress/resume, lifecycle) + AI follow-up endpoint (Challenge Mode) — live AI untested pending credits
+- [x] Blueprint module (8 JSONB sections, AI generation from discovery transcript, living edits) + Decision Log CRUD — AI generation untested pending credits
+- [x] AI orchestration layer (provider-agnostic, full interaction logging via AiInteraction; Anthropic first provider; SSE streaming for blueprint generation)
+- [~] Async jobs — SSE streaming done; BullMQ deferred until Redis exists (Upstash at deploy)
 - [x] Export service (PDF / DOCX / Markdown, on-the-fly; DO Spaces storage at deploy)
-- [x] Dashboard/next-action endpoint + [x] Product Health Score (AI-graded, 5 dimensions)
-- [ ] Notifications, settings, subscriptions, audit logs, rate limiting, reset-password email
+- [x] Dashboard/next-action endpoint + [x] Product Health Score (AI-graded, 5 dimensions; untested pending credits)
+- [x] Email service (Brevo, `src/lib/email/` — best-effort sends, provider isolated in one file)
+- [x] Rate limiting (express-rate-limit v8; authLimiter 10/15min + emailLimiter 3/hr; 429 + Retry-After + draft-8 headers; env-configurable; TRUST_PROXY_HOPS for prod)
+- [ ] **Settings (profile update, password change, workspace rename)** ← ACTIVE
+- [ ] Notifications (challenge scope first — may be cut for V1)
+- [ ] Subscriptions/billing, audit logs
 
-### Completed features
-_(none yet)_
+### Docs to keep current with any API change
+- OpenAPI `@openapi` blocks in `*.routes.ts` (the frontend contract, served at /docs)
+- `docs/frontend-api-guide.md` (all endpoints + Postman walkthrough)
+- `docs/auth-email-verification.md` (verification flow deep-dive)

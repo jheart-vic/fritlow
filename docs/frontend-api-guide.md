@@ -203,7 +203,30 @@ Validation failures (400 from zod) add a `details` array of per-field messages. 
 - **403** → from login: email not verified; elsewhere: "you don't have access to this project"
 - **404** → resource gone / not created yet (often an expected state, e.g. no blueprint yet)
 - **409** → already exists (duplicate email, session/blueprint already created)
+- **429** → rate limited (see below) — show the message and disable retry until `Retry-After` elapses
 - **503** → AI not configured on the server; **502** → AI provider failed. Show "AI is unavailable, try again later" — everything non-AI keeps working
+
+---
+
+## 10. Rate limiting (auth endpoints only)
+
+The unauthenticated auth endpoints are rate limited per client IP. Over the limit, the API returns **429** with the standard error shape and these response headers:
+
+- `Retry-After` — seconds to wait before retrying (use this to disable the submit button / show a countdown)
+- `RateLimit` / `RateLimit-Policy` — [IETF draft-8](https://datatracker.ietf.org/doc/draft-ietf-httpapi-ratelimit-headers/) headers with remaining quota and window (`r=` remaining, `t=` seconds to reset)
+
+```json
+{ "error": "Too many email requests. Please wait before requesting another." }
+```
+
+Limits (defaults — configurable server-side):
+
+| Endpoints | Limit |
+|---|---|
+| `login`, `register`, `refresh`, `verify-email`, `reset-password` | 10 per 15 min |
+| `resend-verification`, `forgot-password` (each sends a real email) | 3 per hour |
+
+Practical UX: the email-sending endpoints are the tight ones. After a user requests a verification/reset email, disable the "resend" button and show a "try again in X" countdown driven by `Retry-After` rather than letting them spam it into a 429.
 
 ---
 
