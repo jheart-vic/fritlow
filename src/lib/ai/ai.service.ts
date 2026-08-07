@@ -2,14 +2,18 @@ import { env } from '../../config/env';
 import { prisma } from '../prisma';
 import { ApiError } from '../../utils/api-error';
 import { anthropicProvider } from './anthropic.provider';
+import { openaiProvider } from './openai.provider';
 import type { AiProvider } from './types';
 
 // The single entry point for AI in Fritlow. Feature services call
 // generateText(); this module picks the provider and logs every call
 // (success AND failure) to AiInteraction — the PRD's end-to-end audit trail.
 
+// Toggle between providers with the AI_PROVIDER env var. Both implement the
+// same AiProvider contract, so nothing downstream changes when you switch.
 const providers: Record<string, AiProvider> = {
   anthropic: anthropicProvider,
+  openai: openaiProvider,
 };
 
 function getProvider(): AiProvider {
@@ -88,7 +92,9 @@ async function run(params: GenerateTextParams, execute: Executor): Promise<strin
         data: {
           feature: params.feature,
           provider: provider.name,
-          model: env.AI_MODEL,
+          // The call failed before the API reported a model, so log the one
+          // this provider is configured to use.
+          model: provider.model,
           systemPrompt: params.system,
           userPrompt: params.prompt,
           latencyMs: Date.now() - startedAt,
