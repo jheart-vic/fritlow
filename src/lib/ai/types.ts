@@ -17,6 +17,9 @@ export interface AiCompletionResult {
 
 export interface AiProvider {
   readonly name: string;
+  // The exact model this provider is configured to call. Used for the audit
+  // log's error path (on success we log the model the API actually reports).
+  readonly model: string;
   isConfigured(): boolean;
   complete(request: AiCompletionRequest): Promise<AiCompletionResult>;
   // Streaming variant: onDelta fires per text chunk; resolves with the

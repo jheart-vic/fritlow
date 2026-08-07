@@ -20,11 +20,18 @@ const envSchema = z.object({
     .string()
     .default('false')
     .transform((v) => v === 'true'),
-  // AI layer. Key is optional so the rest of the API runs without it —
-  // AI endpoints return 503 until it's configured.
-  AI_PROVIDER: z.enum(['anthropic']).default('anthropic'),
+  // AI layer. Keys are optional so the rest of the API runs without them —
+  // AI endpoints return 503 until the SELECTED provider is configured.
+  // AI_PROVIDER is the toggle: whichever you pick, its key must be set.
+  AI_PROVIDER: z.enum(['anthropic', 'openai']).default('anthropic'),
   ANTHROPIC_API_KEY: z.string().optional(),
-  AI_MODEL: z.string().default('claude-opus-4-8'),
+  AI_MODEL: z.string().default('claude-opus-4-8'), // the Anthropic model
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_MODEL: z.string().default('gpt-5'),
+  // GPT-5 reasoning effort — lower is faster/cheaper, higher reasons harder.
+  OPENAI_REASONING_EFFORT: z
+    .enum(['minimal', 'low', 'medium', 'high'])
+    .default('medium'),
   // Email delivery (Brevo). Key is optional so the API runs without it —
   // emails are skipped (and tokens logged in dev) until it's configured.
   BREVO_API_KEY: z.string().optional(),

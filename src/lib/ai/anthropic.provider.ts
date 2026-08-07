@@ -16,6 +16,7 @@ function getClient(): Anthropic {
 
 export const anthropicProvider: AiProvider = {
   name: 'anthropic',
+  model: env.AI_MODEL,
 
   isConfigured() {
     return Boolean(env.ANTHROPIC_API_KEY);
