@@ -6,6 +6,8 @@
 > explicitly post-MVP. Re-check status against the code before acting on any line here.
 >
 > Legend: ✅ built · 🟡 partial · ❌ not built (but in scope / intended) · 🔮 deferred post-MVP (PRD §11.2 / §6).
+>
+> **Cross-checked 2026-08-08 against the frontend dev's "FRITLOW Backend Gap Analysis & Build Spec"** — it independently reached the same gap list; deltas it added are merged below and summarized in §8.
 
 ---
 
@@ -19,10 +21,10 @@
 | Adaptive Discovery Interview | 🟡 | Engine + AI follow-up (Challenge Mode) built. **Missing depth:** confidence meter, several PRD modules (see §4). |
 | Knowledge Engine (core) | ❌ | **Ambiguous & unbuilt.** PRD lists "core implementation" as MVP scope but the Discovery Intelligence Graph (`knowledge_nodes`, `relationships`) is called post-MVP in §14.4. **Decision needed: what does "core" mean for V1? Likely defer.** |
 | Living Blueprint | 🟡 | 8 JSONB sections + living edits built. **Missing:** Dynamic Impact Analysis (signature — see §3), richer section set (§4). |
-| Product Health (Agmund Score™) | ✅ | AI-graded, 5 dimensions. PRD also names Technical Complexity + Market Readiness dimensions (we ship 5, PRD lists 6 candidates). |
-| **AI Product Strategist (baseline)** | ❌ | **In MVP scope, not built.** Maps to the `recommendations` entity — stored, durable insights ("reduce MVP features", "pricing needs work"), NOT chat. Dashboard `nextAction` is a thin stand-in only. See §2, §3. |
+| Product Health (Agmund Score™) | 🟡 | AI-graded but **wrong dimension set (P0 spec fix).** We ship `problem_clarity, target_audience, business_model, differentiation, mvp_focus`. PRD §7 names **Technical Complexity + Market Readiness** (missing) and does NOT list `differentiation`. Decision with product: add the 2 missing dims (→6) and confirm/keep `differentiation`, or amend the PRD. Payload/logic change to existing `POST/GET /health-score`, no new routes. |
+| **AI Product Strategist (baseline)** | ✅ | **BUILT 2026-08-08** as `Recommendation` (`src/modules/recommendations/`). ⚠️ Shape diverges from the build spec — see §8 for the reconciliation decision. |
 | PDF / DOCX Export | ✅ | Also Markdown. On-the-fly; object storage at deploy. |
-| **Version History** | ❌ | **In MVP scope, not built.** No project/blueprint version history table; sections only carry `updatedAt`. |
+| **Version History** | ❌ | **In MVP scope, not built. ← NEXT.** No version table; sections only carry `updatedAt`. Spec'd model: `BlueprintSectionVersion` (`blueprintSectionId, sectionKey, projectId, content, editedById, versionNumber, createdAt`); `PATCH /blueprint/sections/{key}` snapshots pre-edit content first; add `GET …/versions` + `POST …/versions/{id}/restore` (restore = new version, never destructive). Roadmap contradiction to flag: §11.1 puts this in MVP but §16 schedules "Versioning" for Sprint 5. |
 
 ---
 
@@ -32,11 +34,11 @@ Core tables PRD lists for MVP v1.0, vs. Prisma schema:
 
 | Entity | Status | Notes |
 |---|---|---|
-| users, workspaces, members | ✅ | `User`, `Workspace`, `WorkspaceMember`. |
+| users, workspaces, members | 🟡 | Tables exist (`User`, `Workspace`, `WorkspaceMember`), but **workspace management is missing** (spec item 7): only `PATCH /settings/workspaces/{id}` (rename). No create additional workspaces, list-my-workspaces, or membership (invite / change-role / remove). P1 now, **P0 once Team Collaboration ships**. |
 | projects | ✅ | `Project`. **But** `category` is a free String — PRD implies a category set (SaaS, Marketplace, Mobile App, FinTech, EdTech, HealthTech, Social Network) that also drives Templates. No `ARCHIVED` status (analytics expects a "Project Archived" event — §5/§6). |
 | discovery_sessions, discovery_answers | ✅ | `DiscoverySession`, `DiscoveryAnswer`. |
 | blueprints, blueprint_sections | ✅ | `Blueprint`, `BlueprintSection`. |
-| **recommendations** | ❌ | Not modelled. The AI Product Strategist / Founder Copilot output. First-class, durable, has accept/reject (analytics tracks "Recommendation Accepted/Rejected"). |
+| **recommendations** | ✅ | Built as `Recommendation` (2026-08-08). Shape reconciliation pending — see §8. |
 | decision_logs | ✅ | `DecisionLog`. |
 | **templates** | ❌ | Not modelled. "Starting points by product category." Marketplace is 🔮, but the entity itself is a core MVP table. |
 | exports | ✅ | `Export`. |
@@ -55,9 +57,9 @@ Extra tables we have that PRD didn't enumerate: `HealthScore`, `AiInteraction`, 
 - ✅ **AI Challenge Mode** — follow-up endpoint pushes back.
 - ✅ **Agmund Score™ (Product Health Score)**.
 - ✅ **Decision Log**.
-- ❌ **The Living Blueprint's Dynamic Impact Analysis** — editing one section should surface what else is affected. Edits currently just save. *This is the feature that makes the blueprint "living" rather than a generated doc.*
-- ❌ **AI Confidence Meter** in the discovery interview.
-- ❌ **Founder Copilot / AI Product Strategist** — proactive advisor that flags issues unprompted ("your pricing doesn't fit your audience"). Backed by the missing `recommendations` entity.
+- ❌ **The Living Blueprint's Dynamic Impact Analysis** (P1) — editing one section should surface what else is affected. Edits currently just save. Spec approach: extend the `PATCH /blueprint/sections/{key}` response with `impactAnalysis: { affectedSections: [{ sectionKey, reason }], generatedAt }`; needs a cross-section AI call — make it async/SSE if it blows the 300ms P95 budget.
+- ❌ **AI Confidence Meter** in the discovery interview (P1) — add `confidence` (0–100) + `confidenceLabel` (LOW/MEDIUM/HIGH) to the answer object, computed on submit, surfaced in `POST /discovery/answers` and `GET /discovery`.
+- ✅ **Founder Copilot / AI Product Strategist** — BUILT 2026-08-08 (on-demand generation). Spec also wants **proactive trigger wiring** (auto-generate/refresh after `discovery/complete`, after blueprint generation, and after health-score compute when a dimension drops below a threshold) — not yet built; see §8.
 
 ---
 
@@ -105,11 +107,40 @@ Projects created · Blueprint completion rate · Avg time to complete a blueprin
 
 ---
 
-## Suggested priority read (my recommendation, not yet agreed)
+## 8. Cross-check vs the frontend dev's build spec (2026-08-08)
 
-If asked "what from the PRD should V1 actually add next?", the strongest candidates are the ones that are **both MVP-scoped and unbuilt**:
-1. **AI Recommendations / Product Strategist baseline** (`recommendations` entity) — signature, MVP scope, and everything for it already exists in the AI layer.
-2. **Version History** — MVP scope; cheap insurance for the "Living" blueprint.
-3. **A test harness** — closes the single biggest Definition-of-Done gap; unblocks confident iteration.
+The spec independently confirmed our whole gap list (same v1.0 P0/P1s, same v1.1/v2 deferrals). Three things it changed or added:
 
-Everything else (Dynamic Impact Analysis, richer sections/modules, templates, audit logs, analytics) is real but can be sequenced after those or after deploy.
+**A. Gap we under-flagged → now tracked:** Workspace management (create/list/invite/change-role/remove). See §2. Endpoints: `POST /workspaces`, `GET /workspaces` (+ role per workspace), `GET|POST|PATCH|DELETE /workspaces/{id}/members[...]`.
+
+**B. Elevated to P0:** Health-score dimension mismatch (was a parenthetical note) — now an explicit spec fix. See §1.
+
+**C. ⚠️ DECISION NEEDED — Recommendation shape divergence.** I built the module before this spec arrived; the shapes differ. Reconcile before the frontend wires it up:
+
+| Aspect | What we BUILT | What the spec PROPOSES |
+|---|---|---|
+| Generate route | `POST /projects/{id}/recommendations` | `POST /projects/{id}/recommendations/generate` |
+| Category field | `area` (free string: customer, pricing, …) | `type` enum (PRICING, SCOPE, AUDIENCE, ONBOARDING, GENERAL) |
+| Body field | `detail` (plain text) | `body` (markdown) |
+| `severity` | HIGH / MEDIUM / LOW | INFO / WARNING / CRITICAL |
+| `status` | PENDING / ACCEPTED / REJECTED | OPEN / ACKNOWLEDGED / DISMISSED / RESOLVED |
+| Provenance | (none) | `sourceContext` (e.g. `blueprint.business_model`) |
+| Proactive triggers | on-demand only | auto after discovery-complete / blueprint-gen / low health dim |
+
+Recommendation: align to the spec's names where cheap (`/generate` route, `sourceContext`, markdown `body`) since the frontend builds against it, but the 3-value severity/status we chose is arguably better UX than the spec's 4-value set — confirm with the dev rather than silently switching. This is a schema migration + contract change, so decide before building more on top.
+
+**Enrichments folded into the sections above:** concrete `BlueprintSectionVersion` model + restore semantics (§1 Version History); `impactAnalysis` response shape (§3); `confidence`/`confidenceLabel` on answers (§3); Template endpoints scoped to 7 fixed categories (§2/§6); Comments (`parentId` threading) + AI Chat (`ChatConversation`/`ChatMessage`, SSE) data models for the P2 tier.
+
+---
+
+## 9. Reconciled build order (spec's order + what's already done)
+
+1. ✅ ~~AI Recommendations~~ — DONE 2026-08-08 (reconcile shape per §8C).
+2. **Health-score dimension fix** — smallest lift, resolves a P0 spec mismatch (needs product decision on the 2 new dims + `differentiation`).
+3. **Version History** ← NEXT — also unblocks Impact Analysis (shared section-edit history).
+4. **Blueprint Impact Analysis** + **Discovery Confidence Meter** — polish on existing features.
+5. **Template entity** (7 fixed categories) — precedes Templates Marketplace (v1.1).
+6. **Workspace CRUD + membership** — precedes Team Collaboration (v1.1).
+7. **P2:** Notifications, Search, Comments, AI Chat — interleave with frontend needs.
+8. **Test harness** — not on the spec's list but our biggest Definition-of-Done gap (§5); slot in early to protect everything above.
+9. v1.1 (§6), then v2+ (§6) once usage justifies.

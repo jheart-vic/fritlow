@@ -186,18 +186,24 @@ export const swaggerSpec = swaggerJsdoc({
           description: 'A durable, actionable insight from the AI Product Strategist.',
           properties: {
             id: { type: 'string', format: 'uuid' },
-            title: { type: 'string', example: 'Narrow your first customer' },
-            detail: {
+            type: {
               type: 'string',
-              example: '"Founders" is too broad to reach in month one. Pick one segment you can name and find.',
+              enum: ['PRICING', 'SCOPE', 'AUDIENCE', 'ONBOARDING', 'GENERAL'],
             },
-            area: {
+            title: { type: 'string', example: "Pricing doesn't match target audience" },
+            body: {
               type: 'string',
-              description: 'Which part of the plan it addresses',
-              example: 'customer',
+              description: 'Markdown: why it matters + what to do',
+              example: '"Free, figure it out later" leaves value unvalidated. Charge early with a simple team plan and pre-sell a pilot.',
             },
-            severity: { type: 'string', enum: ['HIGH', 'MEDIUM', 'LOW'] },
-            status: { type: 'string', enum: ['PENDING', 'ACCEPTED', 'REJECTED'] },
+            severity: { type: 'string', enum: ['INFO', 'WARNING', 'CRITICAL'] },
+            status: { type: 'string', enum: ['OPEN', 'ACKNOWLEDGED', 'DISMISSED', 'RESOLVED'] },
+            sourceContext: {
+              type: 'string',
+              nullable: true,
+              description: 'What triggered it, e.g. "blueprint.business_model" or "health.differentiation"',
+              example: 'blueprint.business_model',
+            },
             projectId: { type: 'string', format: 'uuid' },
             createdAt: { type: 'string', format: 'date-time' },
             updatedAt: { type: 'string', format: 'date-time' },

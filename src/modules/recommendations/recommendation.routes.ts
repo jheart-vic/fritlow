@@ -10,11 +10,11 @@ recommendationRouter.use(requireAuth);
 
 /**
  * @openapi
- * /api/v1/projects/{projectId}/recommendations:
+ * /api/v1/projects/{projectId}/recommendations/generate:
  *   post:
  *     tags: [Recommendations]
  *     summary: Generate AI Product Strategist recommendations
- *     description: The AI reads the project's discovery answers (plus the blueprint and health score when they exist) and produces 3–6 prioritized, actionable recommendations. Regenerating replaces the PENDING batch but keeps any you've already ACCEPTED/REJECTED. Needs at least 3 answered discovery questions and an AI-configured server.
+ *     description: The AI reads the project's discovery answers (plus the blueprint and health score when they exist) and produces 3–6 prioritized, actionable recommendations. Regenerating replaces the OPEN batch but keeps any you've already ACKNOWLEDGED/DISMISSED/RESOLVED. Needs at least 3 answered discovery questions and an AI-configured server.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -48,9 +48,15 @@ recommendationRouter.use(requireAuth);
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/Error' }
+ */
+recommendationRouter.post('/generate', recommendationController.generate);
+
+/**
+ * @openapi
+ * /api/v1/projects/{projectId}/recommendations:
  *   get:
  *     tags: [Recommendations]
- *     summary: List recommendations (HIGH severity first)
+ *     summary: List recommendations (newest first)
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -60,7 +66,7 @@ recommendationRouter.use(requireAuth);
  *         schema: { type: string, format: uuid }
  *       - in: query
  *         name: status
- *         schema: { type: string, enum: [PENDING, ACCEPTED, REJECTED] }
+ *         schema: { type: string, enum: [OPEN, ACKNOWLEDGED, DISMISSED, RESOLVED] }
  *         description: Filter by lifecycle status
  *     responses:
  *       200:
@@ -74,7 +80,6 @@ recommendationRouter.use(requireAuth);
  *                   type: array
  *                   items: { $ref: '#/components/schemas/Recommendation' }
  */
-recommendationRouter.post('/', recommendationController.generate);
 recommendationRouter.get('/', recommendationController.list);
 
 /**
@@ -82,8 +87,8 @@ recommendationRouter.get('/', recommendationController.list);
  * /api/v1/projects/{projectId}/recommendations/{id}:
  *   patch:
  *     tags: [Recommendations]
- *     summary: Accept or reject a recommendation
- *     description: Moves a recommendation out of PENDING. ACCEPTED = you agree / will act on it; REJECTED = not relevant. This is the accept/reject the product tracks.
+ *     summary: Update a recommendation's status (acknowledge / dismiss / resolve)
+ *     description: Moves a recommendation out of OPEN. ACKNOWLEDGED = seen/agree; DISMISSED = not relevant; RESOLVED = acted on it.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -103,7 +108,7 @@ recommendationRouter.get('/', recommendationController.list);
  *             type: object
  *             required: [status]
  *             properties:
- *               status: { type: string, enum: [ACCEPTED, REJECTED] }
+ *               status: { type: string, enum: [ACKNOWLEDGED, DISMISSED, RESOLVED] }
  *     responses:
  *       200:
  *         description: Updated recommendation

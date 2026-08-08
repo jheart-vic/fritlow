@@ -4,13 +4,22 @@
 
 ## Active: building PRD-MVP gaps in priority order (started 2026-08-08)
 
-Working the highest-priority unbuilt MVP items first (see [prd-backlog.md](prd-backlog.md)). Done: **AI Recommendations** (#1). **Next: Version History** (#2), then a **test harness** (#3).
+Working the highest-priority unbuilt MVP items first. Priority order **reconciled 2026-08-08 with the frontend dev's build spec** (full detail + the reconciled order in [prd-backlog.md](prd-backlog.md) §8–§9):
+
+1. ✅ **AI Recommendations** — DONE (⚠️ shape differs from the spec — reconcile, see below).
+2. **Health-score dimension fix** — P0 spec mismatch, smallest lift. Add `technical_complexity` + `market_readiness` (PRD §7 names 6 dims; we ship 5) and confirm whether `differentiation` stays. Payload/logic change only.
+3. **Version History** — next real build; spec'd model `BlueprintSectionVersion` + snapshot-on-PATCH + restore.
+4. Impact Analysis + Confidence Meter → 5. Template entity → 6. Workspace CRUD + membership → 7. P2 (Notifications/Search/Comments/AI Chat).
+8. **Test harness** — our biggest DoD gap (not on the spec's list); slot in early.
+
+**⚠️ Decision pending — Recommendation shape:** I built it before the spec arrived. Divergences: route `POST /recommendations` vs spec's `/recommendations/generate`; `area`(string) vs `type`(enum); `detail` vs markdown `body`; severity HIGH/MED/LOW vs INFO/WARNING/CRITICAL; status PENDING/ACCEPTED/REJECTED vs OPEN/ACKNOWLEDGED/DISMISSED/RESOLVED; no `sourceContext`; no proactive triggers. See prd-backlog.md §8C — align before building more on it.
+
+**Also newly surfaced by the spec:** workspace management is missing (only rename exists) — create/list/invite/roles (§2, now tracked).
 
 ### Just built — AI Recommendations / AI Product Strategist (2026-08-08)
 `src/modules/recommendations/` + `Recommendation` model (migration `add_recommendations`). `POST /api/v1/projects/:id/recommendations` (AI generates 3–6 prioritized, accept/rejectable insights from discovery + blueprint + health score), `GET /` (optional `?status`, HIGH-severity first), `PATCH /:id` (ACCEPTED/REJECTED). Regeneration replaces the PENDING batch but keeps ACCEPTED/REJECTED as history. Fully E2E-verified against GPT-5. OpenAPI + frontend-guide §7 (Export→§8 … Rate limiting→§12).
 
-### Still on the list before Notifications
-- **Notifications** — CHALLENGE BEFORE BUILDING: dashboard `nextAction` may already cover the V1 need. Decide before coding.
+Note on **Notifications** (P2 above) — still CHALLENGE BEFORE BUILDING: dashboard `nextAction` may already cover the V1 need.
 
 ### Done recently (2026-07-20, Session 5)
 
@@ -21,15 +30,7 @@ Working the highest-priority unbuilt MVP items first (see [prd-backlog.md](prd-b
 
 1. **Subscriptions/billing + audit logs** — nothing in the five core screens depends on them; after deploy.
 
-### PRD items in MVP scope but NOT built (from [prd-backlog.md](prd-backlog.md) — full map there)
-
-Surfaced 2026-08-07 by auditing the PRD against the code. These are *specified for V1* yet missing — candidates that may outrank the deferred items above:
-- ~~**AI Recommendations / AI Product Strategist (baseline)**~~ — ✅ BUILT 2026-08-08 (see above).
-- **Version History** — no project/blueprint version history table yet. ← NEXT
-- **Automated tests** — none exist; PRD's Definition of Done requires unit + integration tests. Biggest process gap.
-- Also unbuilt (see prd-backlog.md §3–5): Dynamic Impact Analysis, discovery confidence meter, richer blueprint sections/discovery modules, templates entity, audit logs, product-analytics events, CSRF review.
-
-**Not yet re-prioritized with the user** — raise these against the deploy/notifications decisions before picking the next build.
+> The full, cross-checked gap map + reconciled build order lives in [prd-backlog.md](prd-backlog.md) (§8 = cross-check deltas, §9 = build order). The priority list at the top of this file is the working queue.
 
 ### Non-feature items competing for attention (both currently blocked on the user)
 
@@ -48,9 +49,14 @@ Surfaced 2026-08-07 by auditing the PRD against the code. These are *specified f
 - [x] Email service (Brevo, `src/lib/email/` — best-effort sends, provider isolated in one file)
 - [x] Rate limiting (express-rate-limit v8; authLimiter 10/15min + emailLimiter 3/hr; 429 + Retry-After + draft-8 headers; env-configurable; TRUST_PROXY_HOPS for prod)
 - [x] Settings (profile name update, password change w/ session revocation, workspace rename — OWNER/ADMIN)
-- [x] AI Recommendations / Product Strategist (Recommendation model; generate/list/accept-reject; regen keeps decisions; GPT-5 verified)
-- [ ] **Version History** ← NEXT
-- [ ] Notifications (challenge scope first — may be cut for V1)
+- [x] AI Recommendations / Product Strategist (Recommendation model; generate/list/accept-reject; regen keeps decisions; GPT-5 verified) — ⚠️ shape reconciliation pending vs build spec
+- [ ] **Health-score dimension fix** (add technical_complexity + market_readiness; confirm differentiation) — P0, small
+- [ ] **Version History** (BlueprintSectionVersion + restore) ← NEXT BUILD
+- [ ] Blueprint Dynamic Impact Analysis (extend PATCH response) + Discovery Confidence Meter
+- [ ] Template entity (7 fixed categories; GET /templates)
+- [ ] Workspace management (create/list/invite/change-role/remove) — P0 once Team ships
+- [ ] Test harness (unit + integration) — biggest DoD gap
+- [ ] Notifications (challenge scope first — may be cut for V1) + Search + Comments + AI Chat (P2)
 - [ ] Subscriptions/billing, audit logs
 
 ### Docs to keep current with any API change
