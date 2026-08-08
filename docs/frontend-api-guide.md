@@ -101,6 +101,36 @@ The signature feature. V1 has a fixed bank of **10 questions across 5 modules** 
 
 UI flow: render `nextQuestion` (with its `hint`), POST the answer, optionally hit the follow-up endpoint to let the AI push back, re-fetch or advance locally, and show `answered/total` as the progress meter. `nextQuestion` is `null` when everything's answered — then show the "Complete interview" CTA.
 
+### Follow-up (Challenge Mode) round-trip — order matters
+
+`followUpAnswer` goes to the **same** `POST /answers` endpoint, **alongside** `answer` (which stays required — resend it; it does not replace `answer`). There is **no separate reply endpoint**. Crucially, the reply is only stored if a follow-up was **already generated** for that question — otherwise `followUpAnswer` is silently ignored. So the sequence is:
+
+```
+# 1. Answer the anchor question
+POST /api/v1/projects/{id}/discovery/answers
+  { "questionId": "problem.core", "answer": "Teams lose track of action items from meetings." }
+→ 200 { "answered": 1, "total": 10, "nextQuestion": { "id": "problem.evidence", … } }
+
+# 2. Generate the AI follow-up (Challenge Mode)
+POST /api/v1/projects/{id}/discovery/answers/problem.core/follow-up
+→ 200 { "questionId": "problem.core", "followUp": "Which specific team feels this most acutely, and how do you know?" }
+
+# 3. Reply to the follow-up — SAME /answers endpoint, resend `answer` + add `followUpAnswer`
+POST /api/v1/projects/{id}/discovery/answers
+  { "questionId": "problem.core", "answer": "Teams lose track of action items from meetings.",
+    "followUpAnswer": "B2B customer-success teams running QBRs — I interviewed 15 and 12 confirmed it." }
+→ 200 { "answered": 1, "total": 10, "nextQuestion": { … } }
+
+# 4. Read the stored follow-up back (question + reply) — it lives on the answer's JSONB
+GET /api/v1/projects/{id}/discovery
+→ session.answers[i].answer = {
+      "text": "Teams lose track of action items from meetings.",
+      "followUp": { "question": "Which specific team…", "answer": "B2B customer-success teams…" }
+    }
+```
+
+Note the two shapes for the same data: step 2 returns the follow-up as a flat `{ questionId, followUp }` string; on read-back (step 4) it's nested at `answer.followUp.question` with the reply at `answer.followUp.answer` (`null` until step 3). Re-running step 2 replaces the follow-up and resets its stored reply to `null`.
+
 ---
 
 ## 4. Blueprint — `/api/v1/projects/:projectId/blueprint`
@@ -163,13 +193,35 @@ Dimension keys: `problem_clarity`, `target_audience`, `business_model`, `differe
 
 ---
 
-## 7. Export — `GET /api/v1/projects/:projectId/export?format=pdf|docx|markdown`
+## 7. Recommendations (AI Product Strategist) — `/api/v1/projects/:projectId/recommendations`
+
+Durable, actionable insights the AI generates from the project's discovery answers (plus blueprint + health score when they exist). Each is a row the founder accepts or rejects — not chat.
+
+| Method + path | Success | Notes |
+|---|---|---|
+| `POST /` | **201** `{ recommendations }` | Generate a batch (3–6). 400 if fewer than 3 questions answered; 503 no AI key. Returns the full current list. |
+| `GET /` | **200** `{ recommendations }` | Optional `?status=PENDING\|ACCEPTED\|REJECTED`. Ordered HIGH severity first. |
+| `PATCH /:id` | **200** `{ recommendation }` | Body `{ "status": "ACCEPTED" \| "REJECTED" }`. 404 if not in this project. |
+
+```json
+{
+  "id": "…", "title": "Narrow your first customer",
+  "detail": "why it matters + what to do",
+  "area": "customer", "severity": "HIGH", "status": "PENDING", "updatedAt": "…"
+}
+```
+
+`severity` ∈ `HIGH|MEDIUM|LOW`; `status` ∈ `PENDING|ACCEPTED|REJECTED`. **Regenerating (`POST` again) replaces the PENDING batch but keeps anything you've already ACCEPTED/REJECTED** — those are the founder's decisions, kept as history.
+
+---
+
+## 8. Export — `GET /api/v1/projects/:projectId/export?format=pdf|docx|markdown`
 
 Returns the file itself (`Content-Disposition: attachment`), not JSON. Frontend: fetch with the Bearer header, read the response as a blob, trigger a download. 404 if no blueprint exists yet, 400 on a bad format value.
 
 ---
 
-## 8. Dashboard — `GET /api/v1/dashboard`
+## 9. Dashboard — `GET /api/v1/dashboard`
 
 The "what should I do next?" screen in one call:
 
@@ -191,7 +243,7 @@ The "what should I do next?" screen in one call:
 
 ---
 
-## 9. Settings — `/api/v1/settings` (Bearer required)
+## 10. Settings — `/api/v1/settings` (Bearer required)
 
 Backs the Settings screen. All three act on the authenticated user.
 
@@ -201,7 +253,7 @@ Backs the Settings screen. All three act on the authenticated user.
 
 ---
 
-## 10. Errors — one shape everywhere
+## 11. Errors — one shape everywhere
 
 ```json
 { "error": "Human-readable message" }
@@ -218,7 +270,7 @@ Validation failures (400 from zod) add a `details` array of per-field messages. 
 
 ---
 
-## 11. Rate limiting (auth endpoints only)
+## 12. Rate limiting (auth endpoints only)
 
 The unauthenticated auth endpoints are rate limited per client IP. Over the limit, the API returns **429** with the standard error shape and these response headers:
 

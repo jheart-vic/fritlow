@@ -18,6 +18,7 @@ assumptions), a Product Health Score, and one source of truth per project.
 - Owner: Lhuj (Agbassi Edmund Obinna)
 - Full vision: six modules — Discovery → Blueprint → Design → Technical Planning → Build → Launch & Growth.
 - **V1 is intentionally narrowed** to prove founders find value in the guided process. Scope discipline is the #1 risk and the #1 asset.
+- **Full PRD → codebase gap map lives in [prd-backlog.md](prd-backlog.md)** — everything the PRD specifies that isn't built yet (MVP-scoped gaps, deferred modules, non-functional gaps). Consult it before planning new work so nothing already-specified is reinvented or forgotten.
 
 ## MVP V1 Scope
 

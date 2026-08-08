@@ -2,9 +2,15 @@
 
 > Update this file whenever the active feature changes. One feature in focus at a time.
 
-## Active: Notifications — CHALLENGE BEFORE BUILDING (next up)
+## Active: building PRD-MVP gaps in priority order (started 2026-08-08)
 
-Decide whether this is even needed for V1 before writing code: the dashboard `nextAction` endpoint may already cover the "what should I do next?" need the notifications feature was meant to serve. If it's redundant, cut it for V1 and jump to post-deploy items. Raise this with the user first.
+Working the highest-priority unbuilt MVP items first (see [prd-backlog.md](prd-backlog.md)). Done: **AI Recommendations** (#1). **Next: Version History** (#2), then a **test harness** (#3).
+
+### Just built — AI Recommendations / AI Product Strategist (2026-08-08)
+`src/modules/recommendations/` + `Recommendation` model (migration `add_recommendations`). `POST /api/v1/projects/:id/recommendations` (AI generates 3–6 prioritized, accept/rejectable insights from discovery + blueprint + health score), `GET /` (optional `?status`, HIGH-severity first), `PATCH /:id` (ACCEPTED/REJECTED). Regeneration replaces the PENDING batch but keeps ACCEPTED/REJECTED as history. Fully E2E-verified against GPT-5. OpenAPI + frontend-guide §7 (Export→§8 … Rate limiting→§12).
+
+### Still on the list before Notifications
+- **Notifications** — CHALLENGE BEFORE BUILDING: dashboard `nextAction` may already cover the V1 need. Decide before coding.
 
 ### Done recently (2026-07-20, Session 5)
 
@@ -14,6 +20,16 @@ Decide whether this is even needed for V1 before writing code: the dashboard `ne
 ### Prioritized queue after Notifications (agreed 2026-07-18)
 
 1. **Subscriptions/billing + audit logs** — nothing in the five core screens depends on them; after deploy.
+
+### PRD items in MVP scope but NOT built (from [prd-backlog.md](prd-backlog.md) — full map there)
+
+Surfaced 2026-08-07 by auditing the PRD against the code. These are *specified for V1* yet missing — candidates that may outrank the deferred items above:
+- ~~**AI Recommendations / AI Product Strategist (baseline)**~~ — ✅ BUILT 2026-08-08 (see above).
+- **Version History** — no project/blueprint version history table yet. ← NEXT
+- **Automated tests** — none exist; PRD's Definition of Done requires unit + integration tests. Biggest process gap.
+- Also unbuilt (see prd-backlog.md §3–5): Dynamic Impact Analysis, discovery confidence meter, richer blueprint sections/discovery modules, templates entity, audit logs, product-analytics events, CSRF review.
+
+**Not yet re-prioritized with the user** — raise these against the deploy/notifications decisions before picking the next build.
 
 ### Non-feature items competing for attention (both currently blocked on the user)
 
@@ -32,7 +48,9 @@ Decide whether this is even needed for V1 before writing code: the dashboard `ne
 - [x] Email service (Brevo, `src/lib/email/` — best-effort sends, provider isolated in one file)
 - [x] Rate limiting (express-rate-limit v8; authLimiter 10/15min + emailLimiter 3/hr; 429 + Retry-After + draft-8 headers; env-configurable; TRUST_PROXY_HOPS for prod)
 - [x] Settings (profile name update, password change w/ session revocation, workspace rename — OWNER/ADMIN)
-- [ ] **Notifications (challenge scope first — may be cut for V1)** ← ACTIVE
+- [x] AI Recommendations / Product Strategist (Recommendation model; generate/list/accept-reject; regen keeps decisions; GPT-5 verified)
+- [ ] **Version History** ← NEXT
+- [ ] Notifications (challenge scope first — may be cut for V1)
 - [ ] Subscriptions/billing, audit logs
 
 ### Docs to keep current with any API change

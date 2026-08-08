@@ -65,8 +65,16 @@ discoveryRouter.get('/', discoveryController.get);
  * /api/v1/projects/{projectId}/discovery/answers:
  *   post:
  *     tags: [Discovery]
- *     summary: Submit (or revise) an answer
- *     description: Answering the same questionId again replaces the previous answer. Returns updated progress and the next unanswered question.
+ *     summary: Submit (or revise) an answer, or reply to a follow-up
+ *     description: >
+ *       Answering the same questionId again replaces the previous answer.
+ *       To reply to an AI follow-up, send `followUpAnswer` on THIS same endpoint,
+ *       alongside `answer` (which stays required — resend it). The reply is only
+ *       stored if a follow-up was already generated for this question (via
+ *       POST /answers/{questionId}/follow-up); otherwise `followUpAnswer` is ignored.
+ *       Read the stored follow-up (question + reply) back from GET /discovery at
+ *       `session.answers[].answer.followUp`.
+ *       Returns progress only — NOT wrapped in `session` (unlike start/get).
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -83,13 +91,27 @@ discoveryRouter.get('/', discoveryController.get);
  *             required: [questionId, answer]
  *             properties:
  *               questionId: { type: string, example: "problem.core" }
- *               answer: { type: string, maxLength: 5000 }
+ *               answer: { type: string, maxLength: 5000, description: "The main answer. Required even when only replying to a follow-up." }
+ *               followUpAnswer: { type: string, maxLength: 5000, description: "Reply to the AI follow-up on this question. Requires a follow-up to have been generated first, else ignored." }
  *     responses:
  *       200:
- *         description: Updated progress
+ *         description: Updated progress (no `session` wrapper)
  *         content:
  *           application/json:
- *             schema: { $ref: '#/components/schemas/DiscoveryProgress' }
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 answered: { type: integer, example: 4 }
+ *                 total: { type: integer, example: 10 }
+ *                 nextQuestion:
+ *                   type: object
+ *                   nullable: true
+ *                   description: null once every anchor question is answered
+ *                   properties:
+ *                     id: { type: string, example: "customer.who" }
+ *                     module: { type: string, example: "customer" }
+ *                     text: { type: string }
+ *                     hint: { type: string }
  *       400: { $ref: '#/components/responses/ValidationError' }
  */
 discoveryRouter.post('/answers', validateBody(submitAnswerSchema), discoveryController.answer);
@@ -100,7 +122,16 @@ discoveryRouter.post('/answers', validateBody(submitAnswerSchema), discoveryCont
  *   post:
  *     tags: [Discovery]
  *     summary: Generate an AI follow-up question for an answered question
- *     description: The AI reads the founder's answer in the project's context and asks one sharper follow-up (gentle Challenge Mode). The follow-up is stored on the answer; reply to it by resubmitting the answer with `followUpAnswer`. Requires the server to have an AI provider key configured.
+ *     description: >
+ *       The AI reads the founder's answer in the project's context and asks one sharper
+ *       follow-up (gentle Challenge Mode). Full round-trip:
+ *       (1) POST /answers to answer the question;
+ *       (2) POST this endpoint to generate the follow-up — it returns `{ questionId, followUp }`
+ *       and stores it on the answer as `followUp: { question, answer: null }`;
+ *       (3) POST /answers again with `followUpAnswer` (and `answer`) to store the reply.
+ *       Read it back from GET /discovery at `session.answers[].answer.followUp`.
+ *       Generating again REPLACES any existing follow-up (and clears its stored reply).
+ *       Requires the server to have an AI provider key configured.
  *     security:
  *       - bearerAuth: []
  *     parameters:

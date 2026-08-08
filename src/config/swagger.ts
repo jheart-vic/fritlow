@@ -96,6 +96,35 @@ export const swaggerSpec = swaggerJsdoc({
                 status: { type: 'string', enum: ['ACTIVE', 'COMPLETED', 'ABANDONED'] },
                 startedAt: { type: 'string', format: 'date-time' },
                 completedAt: { type: 'string', format: 'date-time', nullable: true },
+                answers: {
+                  type: 'array',
+                  description: 'Included on GET /discovery (absent on start). Each answer is a stored row; the JSONB `answer` holds the text and any AI follow-up.',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      questionId: { type: 'string', example: 'problem.core' },
+                      questionText: { type: 'string' },
+                      module: { type: 'string', example: 'problem' },
+                      answeredAt: { type: 'string', format: 'date-time' },
+                      answer: {
+                        type: 'object',
+                        description: 'JSONB payload for this answer',
+                        properties: {
+                          text: { type: 'string', description: "The founder's main answer" },
+                          followUp: {
+                            type: 'object',
+                            nullable: true,
+                            description: 'Present only after a follow-up is generated',
+                            properties: {
+                              question: { type: 'string', description: 'The AI-generated follow-up question' },
+                              answer: { type: 'string', nullable: true, description: "The founder's reply (null until sent via followUpAnswer)" },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
               },
             },
             answered: { type: 'integer', example: 3 },
@@ -150,6 +179,28 @@ export const swaggerSpec = swaggerJsdoc({
             decidedAt: { type: 'string', format: 'date-time' },
             projectId: { type: 'string', format: 'uuid' },
             createdById: { type: 'string', format: 'uuid' },
+          },
+        },
+        Recommendation: {
+          type: 'object',
+          description: 'A durable, actionable insight from the AI Product Strategist.',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            title: { type: 'string', example: 'Narrow your first customer' },
+            detail: {
+              type: 'string',
+              example: '"Founders" is too broad to reach in month one. Pick one segment you can name and find.',
+            },
+            area: {
+              type: 'string',
+              description: 'Which part of the plan it addresses',
+              example: 'customer',
+            },
+            severity: { type: 'string', enum: ['HIGH', 'MEDIUM', 'LOW'] },
+            status: { type: 'string', enum: ['PENDING', 'ACCEPTED', 'REJECTED'] },
+            projectId: { type: 'string', format: 'uuid' },
+            createdAt: { type: 'string', format: 'date-time' },
+            updatedAt: { type: 'string', format: 'date-time' },
           },
         },
         HealthScore: {

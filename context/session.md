@@ -5,6 +5,36 @@
 
 ---
 
+## Session 7 — 2026-08-08
+
+### Done
+- **Built AI Recommendations / AI Product Strategist** (#1 priority from prd-backlog.md). New `src/modules/recommendations/` + `Recommendation` Prisma model (enums `RecommendationSeverity`, `RecommendationStatus`; migration `20260807224927_add_recommendations`). Endpoints (all project-scoped, requireAuth): `POST /` generates 3–6 prioritized insights from discovery+blueprint+health via AI (feature `recommendations.generate`); `GET /` (optional `?status`, sorted HIGH→LOW then newest); `PATCH /:id` accept/reject. Regeneration deletes only PENDING and recreates, preserving ACCEPTED/REJECTED as history. Mounted in app.ts; `Recommendation` swagger schema; frontend-guide new §7 (renumbered Export→8 … Rate limiting→12). **E2E-verified against GPT-5**: 6 sharp recs (challenged "everyone"/"free later"), 400 <3 answers, 404 unknown id, 400 bad status, accept/reject, status filter, regen-preserves-history, HIGH-first ordering. Test data cleaned.
+- **Discovery follow-up contract fixes** (frontend dev flagged the docs). Root cause: the `POST /discovery/answers` OpenAPI omitted `followUpAnswer` (the schema has it); the endpoint's 200 was wrongly documented as `DiscoveryProgress` (which has `session`) when it actually returns progress-only; and the JSONB `answer.followUp` read-back shape was undocumented. Fixed all in `discovery.routes.ts` @openapi + `swagger.ts` (added `answers[]` with `{text, followUp{question,answer}}` to `DiscoveryProgress.session`) + frontend-guide §3 (added the ordering-sensitive round-trip with real tested request/response bytes). **Behavior NOT changed** (left for user decision): (a) `followUpAnswer` is silently dropped if no follow-up was generated first — recommend 400; (b) `answer` is required even when only replying to a follow-up — consider making optional.
+- Note: auth rate limiter (10/15min per IP) trips during heavy local E2E — boot with `RATE_LIMIT_ENABLED=false` for test runs.
+
+### Next
+- **Version History** (#2), then **test harness** (#3). Also pending user decision: the two discovery follow-up behavior fixes above; Notifications (may be cut); Render deploy.
+
+---
+
+## Session 6 — 2026-08-07
+
+### Done
+- **Full-stack live verification through GPT-5** (continuing Session 5): ran the real feature endpoints end-to-end with `AI_PROVIDER=openai` — Challenge Mode follow-up (sharp, contextual), blueprint generation over SSE (2173 deltas → 8 persisted sections, status READY, project → BLUEPRINT_COMPLETE), and AI health score (overall 70, 5 dimensions). All AI features confirmed working live. Test users/data cleaned from DB.
+- **PRD → codebase gap analysis captured** so it survives context clears. Audited `Agmund_PRD_v1.0` against the code and wrote `context/prd-backlog.md` (full map: MVP-scoped gaps, deferred modules, non-functional gaps). Linked it from `summary.md` and `feature.md`. Seeded memory: `MEMORY.md` + `prd-gap-analysis` (reference), `mvp-scope-unbuilt` + `no-automated-tests` (project). **No code changed.**
+
+### Key findings (see context/prd-backlog.md)
+- MVP-scoped but UNBUILT: **AI Recommendations / AI Product Strategist baseline** (`recommendations` entity) and **Version History**. Also signature-but-unbuilt: Dynamic Impact Analysis, discovery confidence meter.
+- **Zero automated tests** despite the PRD Definition of Done — largest process gap.
+- Not modelled: recommendations, templates, notifications, subscriptions, audit_logs.
+- Depth gaps: blueprint sections & discovery modules are deliberate subsets of the PRD's fuller lists; no product-analytics events; CSRF not explicitly handled.
+
+### Next
+- **Decision pending with user:** re-prioritize the unbuilt MVP-scope items (Recommendations, Version History, test harness) against the deferred queue (notifications/billing) and the deploy. My recommendation: Recommendations first (AI layer already exists), then a test harness.
+- Still open from before: Render deploy (frontend dev waiting) and optional Anthropic-path verification.
+
+---
+
 ## Session 5 — 2026-07-20
 
 ### Done
