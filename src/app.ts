@@ -14,6 +14,7 @@ import { discoveryRouter } from './modules/discovery/discovery.routes';
 import { exportRouter } from './modules/exports/export.routes';
 import { healthScoreRouter } from './modules/health/health.routes';
 import { projectRouter } from './modules/projects/project.routes';
+import { recommendationRouter } from './modules/recommendations/recommendation.routes';
 import { settingsRouter } from './modules/settings/settings.routes';
 
 // app.ts builds the Express app (middleware + routes) without starting it,
@@ -56,6 +57,7 @@ app.use('/api/v1/projects', projectRouter);
 app.use('/api/v1/projects/:projectId/discovery', discoveryRouter);
 app.use('/api/v1/projects/:projectId/blueprint', blueprintRouter);
 app.use('/api/v1/projects/:projectId/decisions', decisionRouter);
+app.use('/api/v1/projects/:projectId/recommendations', recommendationRouter);
 app.use('/api/v1/projects/:projectId/export', exportRouter);
 app.use('/api/v1/projects/:projectId/health-score', healthScoreRouter);
 app.use('/api/v1/dashboard', dashboardRouter);

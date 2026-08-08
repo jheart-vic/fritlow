@@ -189,6 +189,43 @@ model DecisionLog {
   @@index([projectId])
 }
 
+// Priority of an AI recommendation, so the founder can triage — tackle the
+// HIGH ones first. The AI assigns this; we clamp it to these three values.
+enum RecommendationSeverity {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+// Lifecycle of a recommendation. It starts PENDING; the founder either
+// ACCEPTED it (agrees / will act) or REJECTED it (disagrees / not relevant).
+// This is the accept/reject the PRD's analytics tracks.
+enum RecommendationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+// The AI Product Strategist's output: stored, durable insights ("narrow your
+// audience", "pricing needs work") — NOT disposable chat. Generated from the
+// project's discovery answers (and blueprint/health score when they exist),
+// then the founder accepts or rejects each one. One project has many.
+model Recommendation {
+  id        String                 @id @default(uuid())
+  title     String // short imperative headline, e.g. "Narrow your first customer"
+  detail    String // why it matters + what to do about it
+  area      String // which part of the plan it addresses, e.g. "customer", "pricing"
+  severity  RecommendationSeverity @default(MEDIUM)
+  status    RecommendationStatus   @default(PENDING)
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId String
+
+  @@index([projectId])
+}
+
 enum ExportFormat {
   PDF
   DOCX
@@ -243,6 +280,7 @@ model Project {
   discoverySession DiscoverySession?
   blueprint        Blueprint?
   decisions        DecisionLog[]
+  recommendations  Recommendation[]
   exports          Export[]
   healthScore      HealthScore?
 
