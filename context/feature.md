@@ -6,15 +6,15 @@
 
 Working the highest-priority unbuilt MVP items first. Priority order **reconciled 2026-08-08 with the frontend dev's build spec** (full detail + the reconciled order in [prd-backlog.md](prd-backlog.md) §8–§9):
 
-1. ✅ **AI Recommendations** — DONE (⚠️ shape differs from the spec — reconcile, see below).
-2. **Health-score dimension fix** — P0 spec mismatch, smallest lift. Add `technical_complexity` + `market_readiness` (PRD §7 names 6 dims; we ship 5) and confirm whether `differentiation` stays. Payload/logic change only.
-3. **Version History** — next real build; spec'd model `BlueprintSectionVersion` + snapshot-on-PATCH + restore.
+1. ✅ **AI Recommendations** — DONE; reshaped to the spec 2026-08-08 (type/body/severity INFO-WARNING-CRITICAL/status OPEN-ACK-DISMISSED-RESOLVED/sourceContext, `POST /generate`). GPT-5 verified.
+2. ✅ **Health-score dimension fix** — DONE; now 7 dims (added `technical_complexity` + `market_readiness`, kept `differentiation`).
+3. **Version History** ← NEXT BUILD; spec'd model `BlueprintSectionVersion` + snapshot-on-PATCH + restore.
 4. Impact Analysis + Confidence Meter → 5. Template entity → 6. Workspace CRUD + membership → 7. P2 (Notifications/Search/Comments/AI Chat).
 8. **Test harness** — our biggest DoD gap (not on the spec's list); slot in early.
 
-**⚠️ Decision pending — Recommendation shape:** I built it before the spec arrived. Divergences: route `POST /recommendations` vs spec's `/recommendations/generate`; `area`(string) vs `type`(enum); `detail` vs markdown `body`; severity HIGH/MED/LOW vs INFO/WARNING/CRITICAL; status PENDING/ACCEPTED/REJECTED vs OPEN/ACKNOWLEDGED/DISMISSED/RESOLVED; no `sourceContext`; no proactive triggers. See prd-backlog.md §8C — align before building more on it.
+**Deferred from the Recommendation work:** the spec's **proactive triggers** (auto-generate after discovery-complete / blueprint-gen / low health dim) are NOT built — generation is on-demand only. Wire later, fire-and-forget.
 
-**Also newly surfaced by the spec:** workspace management is missing (only rename exists) — create/list/invite/roles (§2, now tracked).
+**Also surfaced by the spec (tracked):** workspace management is missing (only rename exists) — create/list/invite/roles (item 6, prd-backlog §2).
 
 ### Just built — AI Recommendations / AI Product Strategist (2026-08-08)
 `src/modules/recommendations/` + `Recommendation` model (migration `add_recommendations`). `POST /api/v1/projects/:id/recommendations` (AI generates 3–6 prioritized, accept/rejectable insights from discovery + blueprint + health score), `GET /` (optional `?status`, HIGH-severity first), `PATCH /:id` (ACCEPTED/REJECTED). Regeneration replaces the PENDING batch but keeps ACCEPTED/REJECTED as history. Fully E2E-verified against GPT-5. OpenAPI + frontend-guide §7 (Export→§8 … Rate limiting→§12).
@@ -49,8 +49,8 @@ Note on **Notifications** (P2 above) — still CHALLENGE BEFORE BUILDING: dashbo
 - [x] Email service (Brevo, `src/lib/email/` — best-effort sends, provider isolated in one file)
 - [x] Rate limiting (express-rate-limit v8; authLimiter 10/15min + emailLimiter 3/hr; 429 + Retry-After + draft-8 headers; env-configurable; TRUST_PROXY_HOPS for prod)
 - [x] Settings (profile name update, password change w/ session revocation, workspace rename — OWNER/ADMIN)
-- [x] AI Recommendations / Product Strategist (Recommendation model; generate/list/accept-reject; regen keeps decisions; GPT-5 verified) — ⚠️ shape reconciliation pending vs build spec
-- [ ] **Health-score dimension fix** (add technical_complexity + market_readiness; confirm differentiation) — P0, small
+- [x] AI Recommendations / Product Strategist — spec-aligned shape (type/body/severity INFO-WARNING-CRITICAL/status OPEN-ACK-DISMISSED-RESOLVED/sourceContext; `POST /generate`); regen keeps decisions; GPT-5 verified. (Proactive triggers deferred.)
+- [x] Health-score dimension fix — now 7 dims (technical_complexity + market_readiness added; differentiation kept)
 - [ ] **Version History** (BlueprintSectionVersion + restore) ← NEXT BUILD
 - [ ] Blueprint Dynamic Impact Analysis (extend PATCH response) + Discovery Confidence Meter
 - [ ] Template entity (7 fixed categories; GET /templates)

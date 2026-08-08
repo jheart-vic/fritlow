@@ -173,7 +173,7 @@ First-class "why we chose X" records. Statuses: `ACTIVE`, `REVISED`, `REVERSED`.
 
 ## 6. Health Score — `/api/v1/projects/:projectId/health-score`
 
-AI grades the discovery answers across 5 dimensions (0–100 each + honest feedback); `overall` is the server-computed average.
+AI grades the discovery answers across 7 dimensions (0–100 each + honest feedback); `overall` is the server-computed average.
 
 | Method + path | Success | Notes |
 |---|---|---|
@@ -189,29 +189,31 @@ AI grades the discovery answers across 5 dimensions (0–100 each + honest feedb
 }
 ```
 
-Dimension keys: `problem_clarity`, `target_audience`, `business_model`, `differentiation`, `mvp_focus`. This powers the blueprint screen's health ribbon.
+Dimension keys (7): `problem_clarity`, `target_audience`, `business_model`, `differentiation`, `mvp_focus`, `technical_complexity`, `market_readiness`. This powers the blueprint screen's health ribbon.
 
 ---
 
 ## 7. Recommendations (AI Product Strategist) — `/api/v1/projects/:projectId/recommendations`
 
-Durable, actionable insights the AI generates from the project's discovery answers (plus blueprint + health score when they exist). Each is a row the founder accepts or rejects — not chat.
+Durable, actionable insights the AI generates from the project's discovery answers (plus blueprint + health score when they exist). Each is a row the founder acknowledges / dismisses / resolves — not chat.
 
 | Method + path | Success | Notes |
 |---|---|---|
-| `POST /` | **201** `{ recommendations }` | Generate a batch (3–6). 400 if fewer than 3 questions answered; 503 no AI key. Returns the full current list. |
-| `GET /` | **200** `{ recommendations }` | Optional `?status=PENDING\|ACCEPTED\|REJECTED`. Ordered HIGH severity first. |
-| `PATCH /:id` | **200** `{ recommendation }` | Body `{ "status": "ACCEPTED" \| "REJECTED" }`. 404 if not in this project. |
+| `POST /generate` | **201** `{ recommendations }` | Generate a batch (3–6). 400 if fewer than 3 questions answered; 503 no AI key. Returns the full current list. |
+| `GET /` | **200** `{ recommendations }` | Optional `?status=OPEN\|ACKNOWLEDGED\|DISMISSED\|RESOLVED`. Newest first. |
+| `PATCH /:id` | **200** `{ recommendation }` | Body `{ "status": "ACKNOWLEDGED" \| "DISMISSED" \| "RESOLVED" }`. 404 if not in this project. |
 
 ```json
 {
-  "id": "…", "title": "Narrow your first customer",
-  "detail": "why it matters + what to do",
-  "area": "customer", "severity": "HIGH", "status": "PENDING", "updatedAt": "…"
+  "id": "…", "type": "PRICING",
+  "title": "Pricing doesn't match target audience",
+  "body": "markdown — why it matters + what to do",
+  "severity": "WARNING", "status": "OPEN",
+  "sourceContext": "blueprint.business_model", "updatedAt": "…"
 }
 ```
 
-`severity` ∈ `HIGH|MEDIUM|LOW`; `status` ∈ `PENDING|ACCEPTED|REJECTED`. **Regenerating (`POST` again) replaces the PENDING batch but keeps anything you've already ACCEPTED/REJECTED** — those are the founder's decisions, kept as history.
+`type` ∈ `PRICING|SCOPE|AUDIENCE|ONBOARDING|GENERAL`; `severity` ∈ `INFO|WARNING|CRITICAL`; `status` ∈ `OPEN|ACKNOWLEDGED|DISMISSED|RESOLVED`. `sourceContext` names what triggered it (a blueprint section key or health dimension), or `null`. **Regenerating (`POST /generate` again) replaces the OPEN batch but keeps anything you've already ACKNOWLEDGED/DISMISSED/RESOLVED** — those are the founder's decisions, kept as history.
 
 ---
 

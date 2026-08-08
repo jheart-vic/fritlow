@@ -21,7 +21,7 @@
 | Adaptive Discovery Interview | 🟡 | Engine + AI follow-up (Challenge Mode) built. **Missing depth:** confidence meter, several PRD modules (see §4). |
 | Knowledge Engine (core) | ❌ | **Ambiguous & unbuilt.** PRD lists "core implementation" as MVP scope but the Discovery Intelligence Graph (`knowledge_nodes`, `relationships`) is called post-MVP in §14.4. **Decision needed: what does "core" mean for V1? Likely defer.** |
 | Living Blueprint | 🟡 | 8 JSONB sections + living edits built. **Missing:** Dynamic Impact Analysis (signature — see §3), richer section set (§4). |
-| Product Health (Agmund Score™) | 🟡 | AI-graded but **wrong dimension set (P0 spec fix).** We ship `problem_clarity, target_audience, business_model, differentiation, mvp_focus`. PRD §7 names **Technical Complexity + Market Readiness** (missing) and does NOT list `differentiation`. Decision with product: add the 2 missing dims (→6) and confirm/keep `differentiation`, or amend the PRD. Payload/logic change to existing `POST/GET /health-score`, no new routes. |
+| Product Health (Agmund Score™) | ✅ | **FIXED 2026-08-08 → 7 dimensions:** the PRD §7 six (`problem_clarity, target_audience, business_model, mvp_focus, technical_complexity, market_readiness`) PLUS our intentional `differentiation`. `overall` = average of the 7. |
 | **AI Product Strategist (baseline)** | ✅ | **BUILT 2026-08-08** as `Recommendation` (`src/modules/recommendations/`). ⚠️ Shape diverges from the build spec — see §8 for the reconciliation decision. |
 | PDF / DOCX Export | ✅ | Also Markdown. On-the-fly; object storage at deploy. |
 | **Version History** | ❌ | **In MVP scope, not built. ← NEXT.** No version table; sections only carry `updatedAt`. Spec'd model: `BlueprintSectionVersion` (`blueprintSectionId, sectionKey, projectId, content, editedById, versionNumber, createdAt`); `PATCH /blueprint/sections/{key}` snapshots pre-edit content first; add `GET …/versions` + `POST …/versions/{id}/restore` (restore = new version, never destructive). Roadmap contradiction to flag: §11.1 puts this in MVP but §16 schedules "Versioning" for Sprint 5. |
@@ -115,19 +115,19 @@ The spec independently confirmed our whole gap list (same v1.0 P0/P1s, same v1.1
 
 **B. Elevated to P0:** Health-score dimension mismatch (was a parenthetical note) — now an explicit spec fix. See §1.
 
-**C. ⚠️ DECISION NEEDED — Recommendation shape divergence.** I built the module before this spec arrived; the shapes differ. Reconcile before the frontend wires it up:
+**C. ✅ RESOLVED 2026-08-08 — Recommendation reshaped to the spec.** User chose "use the specs for a." The module now matches the build spec exactly (migration `reshape_recommendations`, E2E-verified against GPT-5):
 
-| Aspect | What we BUILT | What the spec PROPOSES |
-|---|---|---|
-| Generate route | `POST /projects/{id}/recommendations` | `POST /projects/{id}/recommendations/generate` |
-| Category field | `area` (free string: customer, pricing, …) | `type` enum (PRICING, SCOPE, AUDIENCE, ONBOARDING, GENERAL) |
-| Body field | `detail` (plain text) | `body` (markdown) |
-| `severity` | HIGH / MEDIUM / LOW | INFO / WARNING / CRITICAL |
-| `status` | PENDING / ACCEPTED / REJECTED | OPEN / ACKNOWLEDGED / DISMISSED / RESOLVED |
-| Provenance | (none) | `sourceContext` (e.g. `blueprint.business_model`) |
-| Proactive triggers | on-demand only | auto after discovery-complete / blueprint-gen / low health dim |
+| Aspect | Now (spec-aligned) |
+|---|---|
+| Generate route | `POST /projects/{id}/recommendations/generate` |
+| Category | `type` enum: PRICING, SCOPE, AUDIENCE, ONBOARDING, GENERAL |
+| Body | `body` (markdown) |
+| `severity` | INFO / WARNING / CRITICAL |
+| `status` | OPEN / ACKNOWLEDGED / DISMISSED / RESOLVED (PATCH sets the last three) |
+| Provenance | `sourceContext` (e.g. `blueprint.business_model`), nullable |
+| List order | newest first |
 
-Recommendation: align to the spec's names where cheap (`/generate` route, `sourceContext`, markdown `body`) since the frontend builds against it, but the 3-value severity/status we chose is arguably better UX than the spec's 4-value set — confirm with the dev rather than silently switching. This is a schema migration + contract change, so decide before building more on top.
+**Still NOT built (deferred):** the spec's **proactive triggers** — auto-generate/refresh after discovery-complete, after blueprint generation, and after health-score compute when a dimension is low. Generation is on-demand only for now. Wire these later (fire-and-forget so they don't slow the parent action).
 
 **Enrichments folded into the sections above:** concrete `BlueprintSectionVersion` model + restore semantics (§1 Version History); `impactAnalysis` response shape (§3); `confidence`/`confidenceLabel` on answers (§3); Template endpoints scoped to 7 fixed categories (§2/§6); Comments (`parentId` threading) + AI Chat (`ChatConversation`/`ChatMessage`, SSE) data models for the P2 tier.
 
@@ -135,8 +135,8 @@ Recommendation: align to the spec's names where cheap (`/generate` route, `sourc
 
 ## 9. Reconciled build order (spec's order + what's already done)
 
-1. ✅ ~~AI Recommendations~~ — DONE 2026-08-08 (reconcile shape per §8C).
-2. **Health-score dimension fix** — smallest lift, resolves a P0 spec mismatch (needs product decision on the 2 new dims + `differentiation`).
+1. ✅ ~~AI Recommendations~~ — DONE 2026-08-08, reshaped to the spec (§8C).
+2. ✅ ~~Health-score dimension fix~~ — DONE 2026-08-08 (now 7 dims).
 3. **Version History** ← NEXT — also unblocks Impact Analysis (shared section-edit history).
 4. **Blueprint Impact Analysis** + **Discovery Confidence Meter** — polish on existing features.
 5. **Template entity** (7 fixed categories) — precedes Templates Marketplace (v1.1).

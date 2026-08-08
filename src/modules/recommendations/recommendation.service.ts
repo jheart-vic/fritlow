@@ -134,12 +134,18 @@ export async function generateRecommendations(userId: string, projectId: string)
 
   // Regenerating replaces the OPEN batch but KEEPS the founder's decisions
   // (ACKNOWLEDGED/DISMISSED/RESOLVED) as history — those are their calls.
-  await prisma.$transaction([
-    prisma.recommendation.deleteMany({ where: { projectId, status: 'OPEN' } }),
-    prisma.recommendation.createMany({
-      data: rows.map((r) => ({ ...r, projectId })),
-    }),
-  ]);
+  // maxWait is bumped from the 2s default: the long AI call above lets Neon's
+  // pooled connection go idle, so acquiring one for the transaction can need a
+  // cold-start moment ("Unable to start a transaction in the given time").
+  await prisma.$transaction(
+    [
+      prisma.recommendation.deleteMany({ where: { projectId, status: 'OPEN' } }),
+      prisma.recommendation.createMany({
+        data: rows.map((r) => ({ ...r, projectId })),
+      }),
+    ],
+    { maxWait: 15000, timeout: 15000 },
+  );
 
   return listRecommendations(userId, projectId, {});
 }
