@@ -189,36 +189,47 @@ model DecisionLog {
   @@index([projectId])
 }
 
-// Priority of an AI recommendation, so the founder can triage — tackle the
-// HIGH ones first. The AI assigns this; we clamp it to these three values.
-enum RecommendationSeverity {
-  HIGH
-  MEDIUM
-  LOW
+// What kind of concern a recommendation is about (matches the frontend build
+// spec's categories, so the UI can group/icon them).
+enum RecommendationType {
+  PRICING
+  SCOPE
+  AUDIENCE
+  ONBOARDING
+  GENERAL
 }
 
-// Lifecycle of a recommendation. It starts PENDING; the founder either
-// ACCEPTED it (agrees / will act) or REJECTED it (disagrees / not relevant).
-// This is the accept/reject the PRD's analytics tracks.
+// How urgent the recommendation is, so the founder can triage.
+enum RecommendationSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+// Lifecycle. Starts OPEN; the founder then ACKNOWLEDGED (seen/agree),
+// DISMISSED (not relevant), or RESOLVED (acted on it).
 enum RecommendationStatus {
-  PENDING
-  ACCEPTED
-  REJECTED
+  OPEN
+  ACKNOWLEDGED
+  DISMISSED
+  RESOLVED
 }
 
 // The AI Product Strategist's output: stored, durable insights ("narrow your
 // audience", "pricing needs work") — NOT disposable chat. Generated from the
-// project's discovery answers (and blueprint/health score when they exist),
-// then the founder accepts or rejects each one. One project has many.
+// project's discovery answers (and blueprint/health score when they exist).
+// One project has many. Shape follows the frontend build spec.
 model Recommendation {
-  id        String                 @id @default(uuid())
-  title     String // short imperative headline, e.g. "Narrow your first customer"
-  detail    String // why it matters + what to do about it
-  area      String // which part of the plan it addresses, e.g. "customer", "pricing"
-  severity  RecommendationSeverity @default(MEDIUM)
-  status    RecommendationStatus   @default(PENDING)
-  createdAt DateTime               @default(now())
-  updatedAt DateTime               @updatedAt
+  id            String                 @id @default(uuid())
+  type          RecommendationType     @default(GENERAL)
+  title         String // short headline, e.g. "Pricing doesn't match target audience"
+  body          String // markdown: why it matters + what to do about it
+  severity      RecommendationSeverity @default(WARNING)
+  status        RecommendationStatus   @default(OPEN)
+  // What triggered it, e.g. "blueprint.business_model" or "health.differentiation".
+  sourceContext String?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
 
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   projectId String

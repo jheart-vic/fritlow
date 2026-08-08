@@ -5,6 +5,25 @@
 
 ---
 
+## Session 8 — 2026-08-08
+
+### Done
+- **Reconciled with the frontend dev's build spec** (they sent a full backend gap analysis). Cross-checked vs our `prd-backlog.md` — same gap list; merged their deltas (added §8 cross-check + §9 reconciled build order). Newly surfaced: workspace-management gap (only rename exists), health-score dimension mismatch elevated to P0.
+- **(A) Reshaped the Recommendation module to the spec** (user: "use the specs for a"). New shape: `type` enum (PRICING/SCOPE/AUDIENCE/ONBOARDING/GENERAL), `body` (markdown), `severity` INFO/WARNING/CRITICAL, `status` OPEN/ACKNOWLEDGED/DISMISSED/RESOLVED, `sourceContext`; route `POST /recommendations/generate`; list newest-first. Migration `20260808120000_reshape_recommendations` (hand-written drop+recreate — table was empty; `migrate dev` refused non-interactively on the destructive enum change, applied via `migrate deploy`). Added `{maxWait,timeout:15000}` to the regen `$transaction` (Neon pooled conn goes cold during the ~15s AI call → "Unable to start a transaction" otherwise). Swagger + frontend-guide §7 updated. **Deferred:** the spec's proactive triggers (auto-gen after discovery/blueprint/low-health).
+- **(B) Health score → 7 dimensions** (user: "carry out b as proposed"): added `technical_complexity` + `market_readiness` (PRD §7's missing two), kept `differentiation`. `overall` averages 7. Swagger/guide updated.
+- **Both E2E-verified against GPT-5**: recs generate returned valid enum types/severities + sourceContext on all; PATCH ack/dismiss 200, bad-status 400, unknown 404, status filters + history-preservation correct; health score returned all 7 dim keys. Test data cleaned.
+
+### Gotchas logged
+- `prisma migrate dev` refuses destructive enum changes non-interactively → hand-write migration + `migrate deploy`.
+- Regenerating the Prisma client while `tsx watch` runs hot-restarts the server mid-request (caused spurious 500/hangs). Do client regen with the dev server stopped.
+- Neon auto-suspends; first call after idle can P1001 or time out a transaction — retry / bump `maxWait`.
+- Dev log can trip `grep` binary-detection — use `grep -a` when scraping the verification token.
+
+### Next
+- **Version History** (#3) ← next build. Then Impact Analysis + Confidence Meter, Template entity, Workspace CRUD, P2s; test harness slotted early.
+
+---
+
 ## Session 7 — 2026-08-08
 
 ### Done

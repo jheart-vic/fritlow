@@ -7,25 +7,18 @@ import type { ListRecommendationsQuery, UpdateRecommendationInput } from './reco
 // The AI Product Strategist. It reads everything the project knows so far
 // (discovery answers, the blueprint if generated, the latest health score)
 // and produces a handful of concrete, prioritized recommendations the founder
-// can accept or reject. Insights are stored as rows — durable, not chat.
+// can acknowledge / dismiss / resolve. Insights are stored rows — not chat.
+// Shapes follow the frontend build spec.
 
-type Severity = 'HIGH' | 'MEDIUM' | 'LOW';
-const SEVERITIES: Severity[] = ['HIGH', 'MEDIUM', 'LOW'];
-const SEVERITY_RANK: Record<Severity, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+type RecType = 'PRICING' | 'SCOPE' | 'AUDIENCE' | 'ONBOARDING' | 'GENERAL';
+type Severity = 'INFO' | 'WARNING' | 'CRITICAL';
+const TYPES: RecType[] = ['PRICING', 'SCOPE', 'AUDIENCE', 'ONBOARDING', 'GENERAL'];
+const SEVERITIES: Severity[] = ['INFO', 'WARNING', 'CRITICAL'];
 
 // Same context floor as the health score: recommendations grade the founder's
 // actual input, so there has to be enough of it to be worth grading.
 const MIN_ANSWERS = 3;
 const MAX_RECOMMENDATIONS = 6;
-
-// List ordered for triage: HIGH first, then newest within a severity.
-function sortForTriage<T extends { severity: Severity; createdAt: Date }>(rows: T[]): T[] {
-  return [...rows].sort(
-    (a, b) =>
-      SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] ||
-      b.createdAt.getTime() - a.createdAt.getTime(),
-  );
-}
 
 // Assemble everything we know about the project into one prompt context.
 async function buildContext(projectId: string): Promise<{ context: string; answerCount: number }> {
@@ -59,10 +52,10 @@ async function buildContext(projectId: string): Promise<{ context: string; answe
   ];
 
   if (blueprint && blueprint.sections.length > 0) {
-    parts.push('', 'Blueprint sections:');
+    parts.push('', 'Blueprint sections (key — title):');
     for (const s of blueprint.sections) {
       const content = s.content as { markdown?: string };
-      parts.push(`## ${s.title}\n${content.markdown ?? ''}`);
+      parts.push(`## ${s.key} — ${s.title}\n${content.markdown ?? ''}`);
     }
   }
 
@@ -92,16 +85,22 @@ export async function generateRecommendations(userId: string, projectId: string)
       'You are the AI Product Strategist inside Fritlow, a product operating system for founders. ' +
       'Read the project context and produce concrete, prioritized recommendations that help the founder ' +
       'make better decisions BEFORE building. Be specific and honest — challenge weak assumptions, do not ' +
-      'flatter. Each recommendation needs: a short imperative "title" (e.g. "Narrow your first customer"), ' +
-      'a "detail" of 1-3 sentences explaining why it matters and what to do, an "area" (one word: problem, ' +
-      'customer, business_model, differentiation, mvp_focus, pricing, or general), and a "severity" of ' +
-      'HIGH, MEDIUM, or LOW. ' +
+      'flatter. Each recommendation needs: a "type" (one of PRICING, SCOPE, AUDIENCE, ONBOARDING, GENERAL); ' +
+      'a short "title"; a "body" in markdown (1-3 sentences: why it matters and what to do); a "severity" ' +
+      '(INFO, WARNING, or CRITICAL); and a "sourceContext" naming what in the project triggered it ' +
+      '(e.g. "blueprint.business_model", "health.differentiation", "discovery.customer"). ' +
       `Return between 3 and ${MAX_RECOMMENDATIONS} recommendations as ONLY a JSON array, no code fences: ` +
-      '[{"title": "...", "detail": "...", "area": "...", "severity": "HIGH"}, ...]',
+      '[{"type":"PRICING","title":"...","body":"...","severity":"WARNING","sourceContext":"..."}, ...]',
     prompt: context,
   });
 
-  let parsed: Array<{ title?: unknown; detail?: unknown; area?: unknown; severity?: unknown }>;
+  let parsed: Array<{
+    type?: unknown;
+    title?: unknown;
+    body?: unknown;
+    severity?: unknown;
+    sourceContext?: unknown;
+  }>;
   try {
     const start = raw.indexOf('[');
     const end = raw.lastIndexOf(']');
@@ -119,26 +118,34 @@ export async function generateRecommendations(userId: string, projectId: string)
     .slice(0, MAX_RECOMMENDATIONS)
     .map((r) => {
       const title = String(r.title ?? '').trim();
-      const detail = String(r.detail ?? '').trim();
-      const area = String(r.area ?? 'general').trim().toLowerCase();
-      const sev = String(r.severity ?? 'MEDIUM').trim().toUpperCase();
-      const severity: Severity = (SEVERITIES as string[]).includes(sev) ? (sev as Severity) : 'MEDIUM';
-      return { title, detail, area, severity };
+      const body = String(r.body ?? '').trim();
+      const t = String(r.type ?? 'GENERAL').trim().toUpperCase();
+      const type: RecType = (TYPES as string[]).includes(t) ? (t as RecType) : 'GENERAL';
+      const sev = String(r.severity ?? 'WARNING').trim().toUpperCase();
+      const severity: Severity = (SEVERITIES as string[]).includes(sev) ? (sev as Severity) : 'WARNING';
+      const sc = String(r.sourceContext ?? '').trim();
+      return { type, title, body, severity, sourceContext: sc.length > 0 ? sc : null };
     })
-    .filter((r) => r.title.length > 0 && r.detail.length > 0);
+    .filter((r) => r.title.length > 0 && r.body.length > 0);
 
   if (rows.length === 0) {
     throw new ApiError(502, 'AI recommendations were all malformed — please try again');
   }
 
-  // Regenerating replaces the PENDING batch but KEEPS the founder's decisions
-  // (ACCEPTED/REJECTED) as history — those are their answers, not the AI's.
-  await prisma.$transaction([
-    prisma.recommendation.deleteMany({ where: { projectId, status: 'PENDING' } }),
-    prisma.recommendation.createMany({
-      data: rows.map((r) => ({ ...r, projectId })),
-    }),
-  ]);
+  // Regenerating replaces the OPEN batch but KEEPS the founder's decisions
+  // (ACKNOWLEDGED/DISMISSED/RESOLVED) as history — those are their calls.
+  // maxWait is bumped from the 2s default: the long AI call above lets Neon's
+  // pooled connection go idle, so acquiring one for the transaction can need a
+  // cold-start moment ("Unable to start a transaction in the given time").
+  await prisma.$transaction(
+    [
+      prisma.recommendation.deleteMany({ where: { projectId, status: 'OPEN' } }),
+      prisma.recommendation.createMany({
+        data: rows.map((r) => ({ ...r, projectId })),
+      }),
+    ],
+    { maxWait: 15000, timeout: 15000 },
+  );
 
   return listRecommendations(userId, projectId, {});
 }
@@ -150,10 +157,11 @@ export async function listRecommendations(
 ) {
   await getProject(userId, projectId);
 
-  const rows = await prisma.recommendation.findMany({
+  // Newest first, per the build spec.
+  return prisma.recommendation.findMany({
     where: { projectId, ...(query.status ? { status: query.status } : {}) },
+    orderBy: { createdAt: 'desc' },
   });
-  return sortForTriage(rows as Array<(typeof rows)[number] & { severity: Severity }>);
 }
 
 export async function updateRecommendationStatus(

@@ -8,12 +8,18 @@ import { getProject } from '../projects/project.service';
 // dimensions with honest feedback; the overall 0-100 is OUR average of the
 // dimension scores (never trust a model to do arithmetic consistently).
 
+// Seven dimensions = the PRD §7 set of six (problem_clarity, target_audience,
+// business_model, mvp_focus, technical_complexity, market_readiness) PLUS our
+// intentional extra `differentiation`. technical_complexity + market_readiness
+// were added 2026-08-08 to close the PRD mismatch; differentiation is kept.
 const DIMENSIONS = [
   { key: 'problem_clarity', label: 'Problem Clarity' },
   { key: 'target_audience', label: 'Target Audience' },
   { key: 'business_model', label: 'Business Model' },
   { key: 'differentiation', label: 'Differentiation' },
   { key: 'mvp_focus', label: 'MVP Focus' },
+  { key: 'technical_complexity', label: 'Technical Complexity' },
+  { key: 'market_readiness', label: 'Market Readiness' },
 ] as const;
 
 const MIN_ANSWERS = 3;
