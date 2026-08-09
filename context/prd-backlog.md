@@ -24,7 +24,7 @@
 | Product Health (Agmund Score™) | ✅ | **FIXED 2026-08-08 → 7 dimensions:** the PRD §7 six (`problem_clarity, target_audience, business_model, mvp_focus, technical_complexity, market_readiness`) PLUS our intentional `differentiation`. `overall` = average of the 7. |
 | **AI Product Strategist (baseline)** | ✅ | **BUILT 2026-08-08** as `Recommendation` (`src/modules/recommendations/`). ⚠️ Shape diverges from the build spec — see §8 for the reconciliation decision. |
 | PDF / DOCX Export | ✅ | Also Markdown. On-the-fly; object storage at deploy. |
-| **Version History** | ❌ | **In MVP scope, not built. ← NEXT.** No version table; sections only carry `updatedAt`. Spec'd model: `BlueprintSectionVersion` (`blueprintSectionId, sectionKey, projectId, content, editedById, versionNumber, createdAt`); `PATCH /blueprint/sections/{key}` snapshots pre-edit content first; add `GET …/versions` + `POST …/versions/{id}/restore` (restore = new version, never destructive). Roadmap contradiction to flag: §11.1 puts this in MVP but §16 schedules "Versioning" for Sprint 5. |
+| **Version History** | ✅ | **BUILT 2026-08-08** (`BlueprintSectionVersion`; migration `add_blueprint_section_versions`). `PATCH /blueprint/sections/{key}` snapshots pre-edit content first; `GET …/versions` (newest first, with `editedBy`) + `POST …/versions/{id}/restore` (non-destructive — snapshots current, then rolls back). GPT-5 not needed; E2E-verified. |
 
 ---
 
@@ -137,8 +137,8 @@ The spec independently confirmed our whole gap list (same v1.0 P0/P1s, same v1.1
 
 1. ✅ ~~AI Recommendations~~ — DONE 2026-08-08, reshaped to the spec (§8C).
 2. ✅ ~~Health-score dimension fix~~ — DONE 2026-08-08 (now 7 dims).
-3. **Version History** ← NEXT — also unblocks Impact Analysis (shared section-edit history).
-4. **Blueprint Impact Analysis** + **Discovery Confidence Meter** — polish on existing features.
+3. ✅ ~~Version History~~ — DONE 2026-08-08.
+4. **Blueprint Impact Analysis** + **Discovery Confidence Meter** ← NEXT — polish on existing features.
 5. **Template entity** (7 fixed categories) — precedes Templates Marketplace (v1.1).
 6. **Workspace CRUD + membership** — precedes Team Collaboration (v1.1).
 7. **P2:** Notifications, Search, Comments, AI Chat — interleave with frontend needs.

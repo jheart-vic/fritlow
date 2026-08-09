@@ -8,8 +8,8 @@ Working the highest-priority unbuilt MVP items first. Priority order **reconcile
 
 1. ✅ **AI Recommendations** — DONE; reshaped to the spec 2026-08-08 (type/body/severity INFO-WARNING-CRITICAL/status OPEN-ACK-DISMISSED-RESOLVED/sourceContext, `POST /generate`). GPT-5 verified.
 2. ✅ **Health-score dimension fix** — DONE; now 7 dims (added `technical_complexity` + `market_readiness`, kept `differentiation`).
-3. **Version History** ← NEXT BUILD; spec'd model `BlueprintSectionVersion` + snapshot-on-PATCH + restore.
-4. Impact Analysis + Confidence Meter → 5. Template entity → 6. Workspace CRUD + membership → 7. P2 (Notifications/Search/Comments/AI Chat).
+3. ✅ **Version History** — DONE 2026-08-08 (`BlueprintSectionVersion`; snapshot-on-PATCH; `GET …/versions` + non-destructive `POST …/restore`). GPT-5-free, E2E-verified.
+4. **Impact Analysis + Confidence Meter** ← NEXT → 5. Template entity → 6. Workspace CRUD + membership → 7. P2 (Notifications/Search/Comments/AI Chat).
 8. **Test harness** — our biggest DoD gap (not on the spec's list); slot in early.
 
 **Deferred from the Recommendation work:** the spec's **proactive triggers** (auto-generate after discovery-complete / blueprint-gen / low health dim) are NOT built — generation is on-demand only. Wire later, fire-and-forget.
@@ -51,7 +51,8 @@ Note on **Notifications** (P2 above) — still CHALLENGE BEFORE BUILDING: dashbo
 - [x] Settings (profile name update, password change w/ session revocation, workspace rename — OWNER/ADMIN)
 - [x] AI Recommendations / Product Strategist — spec-aligned shape (type/body/severity INFO-WARNING-CRITICAL/status OPEN-ACK-DISMISSED-RESOLVED/sourceContext; `POST /generate`); regen keeps decisions; GPT-5 verified. (Proactive triggers deferred.)
 - [x] Health-score dimension fix — now 7 dims (technical_complexity + market_readiness added; differentiation kept)
-- [ ] **Version History** (BlueprintSectionVersion + restore) ← NEXT BUILD
+- [x] Version History — `BlueprintSectionVersion`; PATCH snapshots pre-edit content; `GET …/versions` + non-destructive restore; E2E-verified
+- [ ] **Blueprint Dynamic Impact Analysis + Discovery Confidence Meter** ← NEXT
 - [ ] Blueprint Dynamic Impact Analysis (extend PATCH response) + Discovery Confidence Meter
 - [ ] Template entity (7 fixed categories; GET /templates)
 - [ ] Workspace management (create/list/invite/change-role/remove) — P0 once Team ships

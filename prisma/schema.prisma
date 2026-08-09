@@ -46,6 +46,7 @@ model User {
   createdProjects Project[]
   decisions       DecisionLog[]
   exports         Export[]
+  blueprintSectionVersions BlueprintSectionVersion[]
 }
 
 // Tenancy root: every project will live inside a workspace.
@@ -161,7 +162,32 @@ model BlueprintSection {
   blueprint   Blueprint @relation(fields: [blueprintId], references: [id], onDelete: Cascade)
   blueprintId String
 
+  versions BlueprintSectionVersion[]
+
   @@unique([blueprintId, key])
+}
+
+// Version history for the Living Blueprint. Each row is a snapshot of a
+// section's content taken BEFORE an edit (or restore) overwrote it — so the
+// section table always holds the current text, and this table holds the past.
+// `editedById` is the user whose edit displaced this content; restoring never
+// deletes forward history, it just snapshots the current text and rolls back.
+model BlueprintSectionVersion {
+  id            String   @id @default(uuid())
+  sectionKey    String // snapshot of the section key, for convenient scoping
+  content       Json // { "markdown": "..." } as it was before the edit
+  versionNumber Int // 1,2,3… per section, in edit order
+  createdAt     DateTime @default(now())
+
+  section            BlueprintSection @relation(fields: [blueprintSectionId], references: [id], onDelete: Cascade)
+  blueprintSectionId String
+  project            Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId          String
+  editedBy           User             @relation(fields: [editedById], references: [id])
+  editedById         String
+
+  @@index([blueprintSectionId])
+  @@index([projectId])
 }
 
 enum DecisionStatus {
@@ -288,12 +314,13 @@ model Project {
   createdBy   User      @relation(fields: [createdById], references: [id])
   createdById String
 
-  discoverySession DiscoverySession?
-  blueprint        Blueprint?
-  decisions        DecisionLog[]
-  recommendations  Recommendation[]
-  exports          Export[]
-  healthScore      HealthScore?
+  discoverySession       DiscoverySession?
+  blueprint              Blueprint?
+  decisions              DecisionLog[]
+  recommendations        Recommendation[]
+  exports                Export[]
+  healthScore            HealthScore?
+  blueprintSectionVersions BlueprintSectionVersion[]
 
   @@index([workspaceId])
 }

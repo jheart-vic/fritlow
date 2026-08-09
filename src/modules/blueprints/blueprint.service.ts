@@ -1,3 +1,4 @@
+import type { Prisma } from '../../generated/prisma/client';
 import { prisma } from '../../lib/prisma';
 import * as aiService from '../../lib/ai/ai.service';
 import { ApiError } from '../../utils/api-error';
@@ -160,13 +161,9 @@ export async function getBlueprint(userId: string, projectId: string) {
   return blueprint;
 }
 
-// The "Living" in Living Blueprint: sections stay editable after generation.
-export async function updateSection(
-  userId: string,
-  projectId: string,
-  sectionKey: string,
-  input: UpdateSectionInput,
-) {
+// Resolves the section for a project + key, running the membership gate and
+// the not-found checks that every section operation shares.
+async function getOwnedSection(userId: string, projectId: string, sectionKey: string) {
   await getProject(userId, projectId);
 
   const blueprint = await prisma.blueprint.findUnique({ where: { projectId } });
@@ -180,9 +177,85 @@ export async function updateSection(
   if (!section) {
     throw ApiError.notFound(`Unknown blueprint section: ${sectionKey}`);
   }
+  return section;
+}
 
-  return prisma.blueprintSection.update({
-    where: { id: section.id },
-    data: { content: { markdown: input.markdown } },
+// The "Living" in Living Blueprint: sections stay editable after generation.
+// Every edit first snapshots the outgoing content into the version history,
+// then overwrites — atomically, so a snapshot can't exist without its edit.
+export async function updateSection(
+  userId: string,
+  projectId: string,
+  sectionKey: string,
+  input: UpdateSectionInput,
+) {
+  const section = await getOwnedSection(userId, projectId, sectionKey);
+
+  return prisma.$transaction(async (tx) => {
+    const priorVersions = await tx.blueprintSectionVersion.count({
+      where: { blueprintSectionId: section.id },
+    });
+    await tx.blueprintSectionVersion.create({
+      data: {
+        blueprintSectionId: section.id,
+        sectionKey: section.key,
+        projectId,
+        content: section.content as Prisma.InputJsonValue,
+        versionNumber: priorVersions + 1,
+        editedById: userId,
+      },
+    });
+    return tx.blueprintSection.update({
+      where: { id: section.id },
+      data: { content: { markdown: input.markdown } },
+    });
+  });
+}
+
+// The history behind a section — newest edit first. Each row is the content
+// as it was before some edit replaced it, plus who made that edit and when.
+export async function listSectionVersions(userId: string, projectId: string, sectionKey: string) {
+  const section = await getOwnedSection(userId, projectId, sectionKey);
+
+  return prisma.blueprintSectionVersion.findMany({
+    where: { blueprintSectionId: section.id },
+    orderBy: { versionNumber: 'desc' },
+    include: { editedBy: { select: { id: true, fullName: true } } },
+  });
+}
+
+// Roll a section back to a prior version. This is non-destructive: the current
+// content is snapshotted as a new version first, so forward history survives.
+export async function restoreSectionVersion(
+  userId: string,
+  projectId: string,
+  sectionKey: string,
+  versionId: string,
+) {
+  const section = await getOwnedSection(userId, projectId, sectionKey);
+
+  const version = await prisma.blueprintSectionVersion.findUnique({ where: { id: versionId } });
+  if (!version || version.blueprintSectionId !== section.id) {
+    throw ApiError.notFound('Version not found for this section');
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const priorVersions = await tx.blueprintSectionVersion.count({
+      where: { blueprintSectionId: section.id },
+    });
+    await tx.blueprintSectionVersion.create({
+      data: {
+        blueprintSectionId: section.id,
+        sectionKey: section.key,
+        projectId,
+        content: section.content as Prisma.InputJsonValue,
+        versionNumber: priorVersions + 1,
+        editedById: userId,
+      },
+    });
+    return tx.blueprintSection.update({
+      where: { id: section.id },
+      data: { content: version.content as Prisma.InputJsonValue },
+    });
   });
 }

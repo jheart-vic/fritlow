@@ -54,3 +54,22 @@ export async function updateSection(req: Request, res: Response) {
   );
   res.status(200).json({ section });
 }
+
+export async function listSectionVersions(req: Request, res: Response) {
+  const versions = await blueprintService.listSectionVersions(
+    req.user!.id,
+    projectId(req),
+    req.params.sectionKey as string,
+  );
+  res.status(200).json({ versions });
+}
+
+export async function restoreSectionVersion(req: Request, res: Response) {
+  const section = await blueprintService.restoreSectionVersion(
+    req.user!.id,
+    projectId(req),
+    req.params.sectionKey as string,
+    req.params.versionId as string,
+  );
+  res.status(200).json({ section });
+}
