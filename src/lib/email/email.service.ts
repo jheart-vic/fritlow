@@ -70,6 +70,60 @@ export async function sendVerificationEmail(
   );
 }
 
+export async function sendWorkspaceInviteEmail(
+  to: { email: string; name?: string },
+  details: { workspaceName: string; inviterName?: string; role: string },
+): Promise<void> {
+  // Existing users only — they already have an account, so we point them at the
+  // app rather than a signup flow. (Inviting non-users by email is deferred to v1.1.)
+  const link = `${env.APP_URL}/workspaces`;
+  const inviter = details.inviterName ? `${details.inviterName} added you` : 'You have been added';
+  const roleLabel = details.role.toLowerCase();
+  await sendSafely(
+    {
+      to,
+      subject: `You've been added to ${details.workspaceName} — Fritlow`,
+      html: layout(
+        `You're now part of ${details.workspaceName}`,
+        `<p style="margin:0;color:#374151;font-size:14px;line-height:1.6">
+           Hi${to.name ? ` ${to.name}` : ''}, ${inviter} to the
+           <strong>${details.workspaceName}</strong> workspace on Fritlow as a <strong>${roleLabel}</strong>.
+           Open your workspaces to start collaborating.
+         </p>
+         ${button(link, 'Open Fritlow')}`,
+      ),
+    },
+    'workspace invite email',
+  );
+}
+
+export async function sendWorkspaceSignupInviteEmail(
+  to: { email: string },
+  details: { workspaceName: string; inviterName?: string; role: string },
+): Promise<void> {
+  // The invitee has NO Fritlow account yet. Point them at signup — once they
+  // register with this email, they auto-join the workspace (see auth.service).
+  const link = `${env.APP_URL}/register?email=${encodeURIComponent(to.email)}`;
+  const inviter = details.inviterName ? `${details.inviterName} has invited you` : 'You have been invited';
+  const roleLabel = details.role.toLowerCase();
+  await sendSafely(
+    {
+      to,
+      subject: `${details.inviterName ? `${details.inviterName} invited you` : 'You are invited'} to ${details.workspaceName} — Fritlow`,
+      html: layout(
+        `Join ${details.workspaceName} on Fritlow`,
+        `<p style="margin:0;color:#374151;font-size:14px;line-height:1.6">
+           ${inviter} to collaborate in the <strong>${details.workspaceName}</strong> workspace on
+           Fritlow as a <strong>${roleLabel}</strong>. Create your free account with this email address
+           and you'll join the workspace automatically.
+         </p>
+         ${button(link, 'Create your account')}`,
+      ),
+    },
+    'workspace signup invite email',
+  );
+}
+
 export async function sendPasswordResetEmail(
   to: { email: string; name?: string },
   token: string,

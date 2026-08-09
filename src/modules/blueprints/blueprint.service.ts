@@ -3,6 +3,7 @@ import { prisma } from '../../lib/prisma';
 import * as aiService from '../../lib/ai/ai.service';
 import { ApiError } from '../../utils/api-error';
 import { getProject } from '../projects/project.service';
+import { triggerRecommendations } from '../recommendations/recommendation.service';
 import { blueprintSectionDefs } from './blueprint.sections';
 import type { UpdateSectionInput } from './blueprint.schemas';
 
@@ -126,7 +127,10 @@ async function persistGenerated(projectId: string, raw: string) {
 export async function generateBlueprint(userId: string, projectId: string) {
   const { request } = await prepareGeneration(userId, projectId);
   const raw = await aiService.generateText(request);
-  return persistGenerated(projectId, raw);
+  const blueprint = await persistGenerated(projectId, raw);
+  // Proactive Strategist refresh now that the blueprint exists (fire-and-forget).
+  triggerRecommendations(userId, projectId, 'blueprint.generated');
+  return blueprint;
 }
 
 // Streaming twin for the SSE endpoint: same validation, same persistence,
@@ -138,7 +142,10 @@ export async function generateBlueprintStream(
 ) {
   const { request } = await prepareGeneration(userId, projectId);
   const raw = await aiService.generateTextStream(request, onDelta);
-  return persistGenerated(projectId, raw);
+  const blueprint = await persistGenerated(projectId, raw);
+  // Proactive Strategist refresh now that the blueprint exists (fire-and-forget).
+  triggerRecommendations(userId, projectId, 'blueprint.generated');
+  return blueprint;
 }
 
 async function getBlueprintById(id: string) {
@@ -222,6 +229,73 @@ export async function listSectionVersions(userId: string, projectId: string, sec
     orderBy: { versionNumber: 'desc' },
     include: { editedBy: { select: { id: true, fullName: true } } },
   });
+}
+
+// Dynamic Impact Analysis: after a section is edited, ask the AI which OTHER
+// sections may now be inconsistent with it, and why. On-demand (a separate
+// endpoint, not baked into PATCH) so saves stay fast — the cross-section AI
+// call would blow the response-time budget on every keystroke-save.
+export async function analyzeSectionImpact(userId: string, projectId: string, sectionKey: string) {
+  const section = await getOwnedSection(userId, projectId, sectionKey);
+
+  const sections = await prisma.blueprintSection.findMany({
+    where: { blueprintId: section.blueprintId },
+    orderBy: { order: 'asc' },
+  });
+  const others = sections.filter((s) => s.id !== section.id);
+  if (others.length === 0) {
+    return { affectedSections: [], generatedAt: new Date().toISOString() };
+  }
+
+  const edited = section.content as { markdown?: string };
+  const othersText = others
+    .map((s) => {
+      const c = s.content as { markdown?: string };
+      return `### ${s.key} — ${s.title}\n${c.markdown ?? ''}`;
+    })
+    .join('\n\n');
+
+  const raw = await aiService.generateText({
+    feature: 'blueprint.impact_analysis',
+    userId,
+    projectId,
+    maxTokens: 2048,
+    system:
+      'You analyze consistency across a product blueprint. Given one section that was just ' +
+      'edited and the other sections, identify which OTHER sections may now be inconsistent, ' +
+      'outdated, or contradicted by the edit, and briefly why. Only list sections that are ' +
+      'genuinely affected — an empty list is a fine answer. Respond with ONLY a JSON array, ' +
+      'no code fences: [{"sectionKey":"<one of the provided keys>","reason":"<1 sentence>"}].',
+    prompt: [
+      `Edited section: "${section.key}" — ${section.title}`,
+      `Its new content:\n${edited.markdown ?? ''}`,
+      '',
+      'Other sections (key — title, then content):',
+      othersText,
+    ].join('\n'),
+  });
+
+  let parsed: unknown;
+  try {
+    const start = raw.indexOf('[');
+    const end = raw.lastIndexOf(']');
+    parsed = JSON.parse(raw.slice(start, end + 1));
+  } catch {
+    throw new ApiError(502, 'AI returned an unparseable impact analysis — please try again');
+  }
+
+  // Keep only real other-section keys with a reason — never invent sections.
+  const validKeys = new Set(sections.map((s) => s.key));
+  const affectedSections = (Array.isArray(parsed) ? parsed : [])
+    .map((x: { sectionKey?: unknown; reason?: unknown }) => ({
+      sectionKey: String(x.sectionKey ?? '').trim(),
+      reason: String(x.reason ?? '').trim(),
+    }))
+    .filter(
+      (x) => x.sectionKey && x.reason && validKeys.has(x.sectionKey) && x.sectionKey !== section.key,
+    );
+
+  return { affectedSections, generatedAt: new Date().toISOString() };
 }
 
 // Roll a section back to a prior version. This is non-destructive: the current

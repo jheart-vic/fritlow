@@ -5,6 +5,66 @@
 
 ---
 
+## Session 13 — 2026-08-09
+
+### Done — two deferred items pulled forward
+**1. Recommendation proactive triggers** (were "wire later, fire-and-forget"). Extracted the generation guts of `recommendation.service` into internal `runGeneration(userId, projectId)`; added exported `triggerRecommendations(userId, projectId, reason)` — **fire-and-forget** (`void ...then/.catch`), never throws, silently skips when <3 answers. Wired at three sites: `discovery.completeSession` (`discovery.complete`), `blueprint.generateBlueprint` + `generateBlueprintStream` (`blueprint.generated`), and `health.computeHealthScore` **only when a dimension < `LOW_DIMENSION_THRESHOLD` (60)** (`health.low_dimension`). No new tables. No circular imports (recs already read discovery/blueprint/health via `prisma`, not their services). **E2E-verified against GPT-5:** 3 vague answers → health overall 2 → health response returned immediately, then the trigger fired async and generated 6 valid recs (log line `[recommendations] proactively refreshed … (health.low_dimension)`). Note: the trigger AI call takes ~15-25s, so the log line/recs appear well after the parent response — that's the point.
+
+**2. Email-invite for NON-users** (was deferred to v1.1). New `WorkspaceInvitation` model + `InvitationStatus` enum (PENDING/ACCEPTED/REVOKED); migration `20260809040758_add_workspace_invitations`. `inviteMember` now returns a discriminated result: existing account → `{ pending:false, member }` (added + heads-up email, as before); unknown email → **upsert a PENDING invitation** (`@@unique([workspaceId, email])`, resend re-arms role/status) + signup email → `{ pending:true, invitation }`. Controller returns 201 `{member}` or 201 `{pending:true, invitation}`. **Auto-join on signup:** `auth.register` now calls new `consumePendingInvitations(userId, email)` fire-and-forget — turns matching PENDING invites into memberships (skips existing, marks ACCEPTED). Emails lowercased on both sides so matching works. Two new email templates (`sendWorkspaceInviteEmail` for existing users, `sendWorkspaceSignupInviteEmail` for new — links to `/register?email=`). **E2E-verified (deterministic, no AI):** non-user invite → `{pending:true}` PENDING(ADMIN); resend → 201 (role→MEMBER); register invitee → auto-joined as MEMBER; invitee login sees the workspace; re-invite of now-member → 409.
+
+### Docs
+- Swagger: new `WorkspaceInvitation` schema; invite route `@openapi` now documents the `oneOf` 201 (member | pending+invitation), 404 removed. Frontend-guide §12 invite row updated (dual response shape + auto-join note).
+
+### Notes / gotchas
+- `migrate dev` applied the migration but the generated client didn't pick up the new model until an explicit `npm run db:generate` — regen after migrate if `workspaceInvitation` types are missing.
+- Test data cleaned (owner-/invitee-/trig- users + owned workspaces + invitations).
+
+### Next
+- P2 tier (Search → Comments → decide Notifications → AI Chat) + test harness (biggest DoD gap). Deploy to Render still unblocks the frontend dev. Deferred still: explicit accept-invite endpoint / invite revoke UI (auto-join-on-register covers V1), DB Template table (v1.1 Marketplace).
+
+---
+
+## Session 12 — 2026-08-09
+
+### Done — #6: Workspace management (closes the last P0/P1 MVP gap)
+- New `src/modules/workspaces/` over the EXISTING `Workspace`/`WorkspaceMember` tables (no migration). Endpoints (all requireAuth): `POST /workspaces` (creator→OWNER, one tx), `GET /workspaces` (my memberships flattened to workspace+role), `GET /:id/members` (any member), `POST /:id/members/invite` (OWNER/ADMIN; existing users only — 404 if no account, 409 if already member; role ADMIN|MEMBER), `PATCH /:id/members/:userId` (role change), `DELETE /:id/members/:userId`.
+- **RBAC guards:** only an OWNER may grant the OWNER role or change/remove an existing owner; a workspace must always keep ≥1 owner (last-owner demote/remove → 400); MEMBERs can't manage (403). Matched the spec's paths exactly (incl. `/members/invite`).
+- Swagger `WorkspaceMembership` + `WorkspaceMember` schemas; frontend-guide new §12 (Errors→13, Rate limiting→14).
+- **E2E-verified (12 scenarios):** create, list-with-role, members, invite (404/201/409), B sees workspace as MEMBER, MEMBER-invite 403, non-member-view 403, promote to ADMIN 200, self-demote-last-owner 400, ADMIN-grant-owner 403, remove 204, remove-last-owner 400. Test users cleaned.
+- Rename stays at `PATCH /settings/workspaces/:id`; email-invite for non-users deferred to v1.1 Team Collaboration.
+
+### Status: all P0/P1 MVP gaps from prd-backlog §9 are now CLOSED.
+Next tier is P2 (Notifications/Search/Comments/AI Chat) + the test harness. Deferred: Recommendation proactive triggers, DB Template table (v1.1 Marketplace).
+
+### Gotcha (recurring)
+- Emails are lowercased on register/login — when scraping the dev-log verification token, grep the LOWERCASED email (`wsa-…` not `wsA-…`). And Neon cold-start still intermittently 500s `verify-email`'s transaction on first hit — retry.
+
+---
+
+## Session 11 — 2026-08-09
+
+### Done — #5: Template entity
+- New `src/modules/templates/` — **static in-code** catalogue of 7 category starting points (saas, marketplace, mobile_app, fintech, edtech, healthtech, social_network), each with `id, category, name, description, prefillDiscoveryHints` (map of discovery questionId → category-specific hint). `GET /api/v1/templates` + `GET /api/v1/templates/{id}` (404 unknown), behind requireAuth. Swagger `Template` schema; frontend-guide new §11 (Errors→12, Rate limiting→13).
+- **Decision:** static in-code (like the discovery question bank / blueprint section defs), not a DB table — no migration/seed, dodges Neon flakiness, and the read contract is identical to a DB-backed one. The `Template` DB table earns its place with the v1.1 user-submitted Marketplace. Project `category` left as free-text on create (not tied to templates yet — possible follow-up; frontend can use `template.category` for the wizard dropdown).
+- E2E-verified: 7 templates listed, `GET /templates/saas` full detail with hints, unknown id 404, no-auth 401. No AI/DB-write path, so fast.
+
+### Next
+- **Workspace management** (#6) ← next: `POST /workspaces`, `GET /workspaces` (+ my role), `GET|POST(invite)|PATCH(role)|DELETE /workspaces/{id}/members`. Precedes Team Collaboration (v1.1). Then P2s; test harness early. Deferred: Recommendation proactive triggers.
+
+---
+
+## Session 10 — 2026-08-08
+
+### Done — #4: Dynamic Impact Analysis + Confidence Meter (both GPT-5-verified)
+- **Discovery Confidence Meter:** `discovery.service` now grades each answer's specificity on submit via AI (feature `discovery.confidence`, maxTokens 1024 for reasoning headroom, returns 0-100 → we derive LOW/MEDIUM/HIGH). **Best-effort**: null on failure/no-AI so answering never depends on AI. Stored in the answer JSONB (`{text, confidence, confidenceLabel, followUp?}` — no migration). Re-graded only when the answer text changes. `generateFollowUp` updated to preserve confidence. Surfaced in `POST /answers` response and `GET /discovery`. Verified: "Everyone who has meetings" → 2/LOW; a detailed ICP answer → 95/HIGH.
+- **Blueprint Dynamic Impact Analysis:** new on-demand endpoint `POST /blueprint/sections/{key}/impact-analysis` → `{ impactAnalysis: { affectedSections:[{sectionKey,reason}], generatedAt } }`. Deliberately NOT coupled to PATCH (keeps saves under the 300ms budget the spec flagged). AI compares the edited section vs all others; output filtered to valid other-section keys only; not persisted. 503/502/404 handled. Verified: pivoting business_model to "free ad-supported" correctly flagged `success_metrics` + `target_audience` with accurate reasons; unknown section → 404.
+- Swagger + frontend-guide §3 (confidence on POST/GET answer) and §4 (impact-analysis subsection) updated.
+
+### Next
+- **Template entity** (#5) ← next: 7 fixed categories (SaaS/Marketplace/Mobile App/FinTech/EdTech/HealthTech/Social Network), `GET /templates` + `GET /templates/{id}`, admin-managed list. Then Workspace CRUD (#6), P2s; test harness early. Deferred: Recommendation proactive triggers.
+
+---
+
 ## Session 9 — 2026-08-08
 
 ### Done — Version History (#3) built + verified

@@ -2,16 +2,60 @@ import { prisma } from '../../lib/prisma';
 import * as aiService from '../../lib/ai/ai.service';
 import { ApiError } from '../../utils/api-error';
 import { getProject } from '../projects/project.service';
+import { triggerRecommendations } from '../recommendations/recommendation.service';
 import { discoveryQuestions, getQuestion } from './questions';
 import type { SubmitAnswerInput } from './discovery.schemas';
 
 // Shape of the JSONB `answer` column on DiscoveryAnswer.
 interface AnswerPayload {
   text: string;
+  // AI "confidence meter": how specific/complete the answer is (0-100), with a
+  // derived band. Null when AI isn't configured or grading failed — answering
+  // never depends on AI being available.
+  confidence?: number | null;
+  confidenceLabel?: ConfidenceLabel | null;
   followUp?: {
     question: string;
     answer: string | null;
   };
+}
+
+type ConfidenceLabel = 'LOW' | 'MEDIUM' | 'HIGH';
+
+function confidenceBand(score: number): ConfidenceLabel {
+  if (score >= 70) return 'HIGH';
+  if (score >= 40) return 'MEDIUM';
+  return 'LOW';
+}
+
+// Best-effort AI grade of an answer's specificity/completeness. Returns null on
+// any failure (incl. AI not configured) so a submit never fails because of it.
+async function gradeAnswerConfidence(
+  userId: string,
+  projectId: string,
+  question: { module: string; text: string },
+  answerText: string,
+): Promise<{ confidence: number; confidenceLabel: ConfidenceLabel } | null> {
+  try {
+    const raw = await aiService.generateText({
+      feature: 'discovery.confidence',
+      userId,
+      projectId,
+      maxTokens: 1024, // headroom so a reasoning model still emits the number
+      system:
+        "You grade how specific and complete a founder's answer to a product discovery " +
+        'question is, on a 0-100 scale. Vague/generic/hand-wavy answers ("everyone", ' +
+        '"we\'ll figure it out later") score low; concrete answers with real, specific ' +
+        'detail score high. Respond with ONLY an integer from 0 to 100 — no other text.',
+      prompt: `Question (${question.module}): ${question.text}\nAnswer: ${answerText}`,
+    });
+    const digits = raw.replace(/[^0-9]/g, '').slice(0, 3);
+    if (digits.length === 0) return null;
+    const confidence = Math.max(0, Math.min(100, parseInt(digits, 10)));
+    return { confidence, confidenceLabel: confidenceBand(confidence) };
+  } catch {
+    return null;
+  }
 }
 
 // getProject (from the projects service) doubles as the access gate here:
@@ -84,8 +128,21 @@ export async function submitAnswer(userId: string, projectId: string, input: Sub
   });
   const existingPayload = (existing?.answer ?? {}) as Partial<AnswerPayload>;
 
+  // Grade confidence only when the main answer text actually changes — a
+  // follow-up reply resubmits the same text and shouldn't trigger a re-grade.
+  const textChanged = existingPayload.text !== input.answer;
+  let confidence = existingPayload.confidence ?? null;
+  let confidenceLabel = existingPayload.confidenceLabel ?? null;
+  if (textChanged) {
+    const graded = await gradeAnswerConfidence(userId, projectId, question, input.answer);
+    confidence = graded?.confidence ?? null;
+    confidenceLabel = graded?.confidenceLabel ?? null;
+  }
+
   const payload: AnswerPayload = {
     text: input.answer,
+    confidence,
+    confidenceLabel,
     ...(existingPayload.followUp
       ? {
           followUp: {
@@ -114,7 +171,9 @@ export async function submitAnswer(userId: string, projectId: string, input: Sub
     where: { sessionId: session.id },
     select: { questionId: true },
   });
-  return buildProgress(new Set(answers.map((a) => a.questionId)));
+  // Surface the just-graded confidence on the submit response (also stored in
+  // the JSONB, so GET /discovery returns it on every answer too).
+  return { ...buildProgress(new Set(answers.map((a) => a.questionId))), confidence, confidenceLabel };
 }
 
 // The signature move: after a founder answers an anchor question, the AI
@@ -172,7 +231,12 @@ export async function generateFollowUp(userId: string, projectId: string, questi
   await prisma.discoveryAnswer.update({
     where: { id: answerRow.id },
     data: {
-      answer: { text: payload.text, followUp: { question: followUpQuestion, answer: null } },
+      answer: {
+        text: payload.text,
+        confidence: payload.confidence ?? null,
+        confidenceLabel: payload.confidenceLabel ?? null,
+        followUp: { question: followUpQuestion, answer: null },
+      },
     },
   });
 
@@ -201,8 +265,13 @@ export async function completeSession(userId: string, projectId: string) {
     );
   }
 
-  return prisma.discoverySession.update({
+  const updated = await prisma.discoverySession.update({
     where: { id: session.id },
     data: { status: 'COMPLETED', completedAt: new Date() },
   });
+
+  // Proactive Strategist refresh now that discovery is complete (fire-and-forget).
+  triggerRecommendations(userId, projectId, 'discovery.complete');
+
+  return updated;
 }

@@ -3,6 +3,11 @@ import { prisma } from '../../lib/prisma';
 import * as aiService from '../../lib/ai/ai.service';
 import { ApiError } from '../../utils/api-error';
 import { getProject } from '../projects/project.service';
+import { triggerRecommendations } from '../recommendations/recommendation.service';
+
+// Below this, a dimension is weak enough to be worth a proactive Strategist
+// refresh — the founder likely needs concrete guidance on how to fix it.
+const LOW_DIMENSION_THRESHOLD = 60;
 
 // The Product Health Score: the AI grades the project across five fixed
 // dimensions with honest feedback; the overall 0-100 is OUR average of the
@@ -110,6 +115,12 @@ export async function computeHealthScore(userId: string, projectId: string) {
     create: { projectId, overall, dimensions: dimensionsJson, summary: parsed.summary ?? null },
     update: { overall, dimensions: dimensionsJson, summary: parsed.summary ?? null },
   });
+
+  // Only refresh the Strategist when something is actually weak — a healthy
+  // score doesn't need fresh recommendations, and this AI call isn't free.
+  if (dimensions.some((d) => d.score < LOW_DIMENSION_THRESHOLD)) {
+    triggerRecommendations(userId, projectId, 'health.low_dimension');
+  }
 
   return healthScore;
 }

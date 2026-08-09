@@ -73,3 +73,12 @@ export async function restoreSectionVersion(req: Request, res: Response) {
   );
   res.status(200).json({ section });
 }
+
+export async function analyzeSectionImpact(req: Request, res: Response) {
+  const impactAnalysis = await blueprintService.analyzeSectionImpact(
+    req.user!.id,
+    projectId(req),
+    req.params.sectionKey as string,
+  );
+  res.status(200).json({ impactAnalysis });
+}

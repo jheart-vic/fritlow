@@ -19,6 +19,14 @@ enum WorkspaceRole {
   MEMBER
 }
 
+// Lifecycle of an invitation sent to an email that has no account yet.
+// PENDING → ACCEPTED (consumed when that email registers) or REVOKED.
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+}
+
 // The project lifecycle shown on the Projects screen:
 // Draft → Discovery → Blueprint Complete → Launched.
 enum ProjectStatus {
@@ -47,6 +55,7 @@ model User {
   decisions       DecisionLog[]
   exports         Export[]
   blueprintSectionVersions BlueprintSectionVersion[]
+  sentInvitations WorkspaceInvitation[]
 }
 
 // Tenancy root: every project will live inside a workspace.
@@ -57,8 +66,9 @@ model Workspace {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members  WorkspaceMember[]
-  projects Project[]
+  members     WorkspaceMember[]
+  projects    Project[]
+  invitations WorkspaceInvitation[]
 }
 
 enum AiCallStatus {
@@ -338,6 +348,28 @@ model WorkspaceMember {
 
   // A user can only be a member of a given workspace once.
   @@unique([userId, workspaceId])
+}
+
+// An invite sent to an email that has no Fritlow account yet. When that email
+// registers, any PENDING invitations are consumed and turned into memberships
+// (auto-join). Invitations for emails that DO have an account are never stored
+// here — those become memberships immediately.
+model WorkspaceInvitation {
+  id          String           @id @default(uuid())
+  email       String // lowercased, matches the email a future user registers with
+  role        WorkspaceRole    @default(MEMBER)
+  status      InvitationStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+  acceptedAt  DateTime?
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId String
+  invitedBy   User      @relation(fields: [invitedById], references: [id])
+  invitedById String
+
+  // At most one live invite per (workspace, email). A resend updates the row.
+  @@unique([workspaceId, email])
+  @@index([email])
 }
 
 // Long-lived session tokens. Only a SHA-256 hash is stored — if the DB

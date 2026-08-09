@@ -95,7 +95,7 @@ discoveryRouter.get('/', discoveryController.get);
  *               followUpAnswer: { type: string, maxLength: 5000, description: "Reply to the AI follow-up on this question. Requires a follow-up to have been generated first, else ignored." }
  *     responses:
  *       200:
- *         description: Updated progress (no `session` wrapper)
+ *         description: Updated progress (no `session` wrapper). `confidence`/`confidenceLabel` are the AI grade of the answer just submitted (null if AI is not configured).
  *         content:
  *           application/json:
  *             schema:
@@ -103,6 +103,8 @@ discoveryRouter.get('/', discoveryController.get);
  *               properties:
  *                 answered: { type: integer, example: 4 }
  *                 total: { type: integer, example: 10 }
+ *                 confidence: { type: integer, nullable: true, minimum: 0, maximum: 100, example: 72 }
+ *                 confidenceLabel: { type: string, nullable: true, enum: [LOW, MEDIUM, HIGH] }
  *                 nextQuestion:
  *                   type: object
  *                   nullable: true

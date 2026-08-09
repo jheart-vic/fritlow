@@ -59,6 +59,65 @@ export const swaggerSpec = swaggerJsdoc({
             updatedAt: { type: 'string', format: 'date-time' },
           },
         },
+        WorkspaceMembership: {
+          type: 'object',
+          description: "A workspace plus the caller's role in it.",
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            name: { type: 'string' },
+            role: { type: 'string', enum: ['OWNER', 'ADMIN', 'MEMBER'] },
+            createdAt: { type: 'string', format: 'date-time' },
+            updatedAt: { type: 'string', format: 'date-time' },
+          },
+        },
+        WorkspaceMember: {
+          type: 'object',
+          description: 'A member of a workspace (the user + their role).',
+          properties: {
+            userId: { type: 'string', format: 'uuid' },
+            role: { type: 'string', enum: ['OWNER', 'ADMIN', 'MEMBER'] },
+            createdAt: { type: 'string', format: 'date-time' },
+            user: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                fullName: { type: 'string' },
+                email: { type: 'string', format: 'email' },
+              },
+            },
+          },
+        },
+        WorkspaceInvitation: {
+          type: 'object',
+          description:
+            'A pending invitation to an email with no Fritlow account yet. Consumed (→ membership) when that email registers.',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            email: { type: 'string', format: 'email' },
+            role: { type: 'string', enum: ['ADMIN', 'MEMBER'] },
+            status: { type: 'string', enum: ['PENDING', 'ACCEPTED', 'REVOKED'] },
+            workspaceId: { type: 'string', format: 'uuid' },
+            invitedById: { type: 'string', format: 'uuid' },
+            createdAt: { type: 'string', format: 'date-time' },
+            acceptedAt: { type: 'string', format: 'date-time', nullable: true },
+          },
+        },
+        Template: {
+          type: 'object',
+          description: 'A create-project starting point for a product category.',
+          properties: {
+            id: { type: 'string', example: 'saas' },
+            category: { type: 'string', example: 'SaaS' },
+            name: { type: 'string', example: 'SaaS Starter' },
+            description: { type: 'string' },
+            prefillDiscoveryHints: {
+              type: 'object',
+              description: 'Map of discovery question id → category-specific hint',
+              additionalProperties: { type: 'string' },
+              example: { 'customer.who': 'Name the role and company size, not just an industry.' },
+            },
+          },
+        },
         Project: {
           type: 'object',
           properties: {
@@ -111,6 +170,18 @@ export const swaggerSpec = swaggerJsdoc({
                         description: 'JSONB payload for this answer',
                         properties: {
                           text: { type: 'string', description: "The founder's main answer" },
+                          confidence: {
+                            type: 'integer',
+                            nullable: true,
+                            minimum: 0,
+                            maximum: 100,
+                            description: 'AI confidence meter (null if AI not configured)',
+                          },
+                          confidenceLabel: {
+                            type: 'string',
+                            nullable: true,
+                            enum: ['LOW', 'MEDIUM', 'HIGH'],
+                          },
                           followUp: {
                             type: 'object',
                             nullable: true,

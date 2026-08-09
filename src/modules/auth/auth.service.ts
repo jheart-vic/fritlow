@@ -6,6 +6,7 @@ import {
 } from '../../lib/email/email.service';
 import { ApiError } from '../../utils/api-error';
 import { hashPassword, verifyPassword } from '../../utils/password';
+import { consumePendingInvitations } from '../workspaces/workspace.service';
 import {
   generateOpaqueToken,
   hashToken,
@@ -107,6 +108,12 @@ export async function register(input: RegisterInput): Promise<{ user: PublicUser
     });
 
     return created;
+  });
+
+  // Auto-join any workspaces this email was invited to before signing up.
+  // Fire-and-forget: registration must not fail if this has a hiccup.
+  void consumePendingInvitations(user.id, user.email).catch((err) => {
+    console.warn(`[auth] failed to consume invitations for ${user.email}:`, err);
   });
 
   const verificationToken = await issueVerificationToken(user.id);

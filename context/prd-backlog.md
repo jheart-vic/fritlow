@@ -34,13 +34,13 @@ Core tables PRD lists for MVP v1.0, vs. Prisma schema:
 
 | Entity | Status | Notes |
 |---|---|---|
-| users, workspaces, members | 🟡 | Tables exist (`User`, `Workspace`, `WorkspaceMember`), but **workspace management is missing** (spec item 7): only `PATCH /settings/workspaces/{id}` (rename). No create additional workspaces, list-my-workspaces, or membership (invite / change-role / remove). P1 now, **P0 once Team Collaboration ships**. |
+| users, workspaces, members | ✅ | Full workspace management BUILT 2026-08-09 (`src/modules/workspaces/`): `POST /workspaces`, `GET /workspaces` (+ role), `GET /:id/members`, `POST /:id/members/invite` (existing users only), `PATCH`/`DELETE /:id/members/:userId`. RBAC guards: owner-only for the owner role, always ≥1 owner. (Rename still at `PATCH /settings/workspaces/:id`.) |
 | projects | ✅ | `Project`. **But** `category` is a free String — PRD implies a category set (SaaS, Marketplace, Mobile App, FinTech, EdTech, HealthTech, Social Network) that also drives Templates. No `ARCHIVED` status (analytics expects a "Project Archived" event — §5/§6). |
 | discovery_sessions, discovery_answers | ✅ | `DiscoverySession`, `DiscoveryAnswer`. |
 | blueprints, blueprint_sections | ✅ | `Blueprint`, `BlueprintSection`. |
 | **recommendations** | ✅ | Built as `Recommendation` (2026-08-08). Shape reconciliation pending — see §8. |
 | decision_logs | ✅ | `DecisionLog`. |
-| **templates** | ❌ | Not modelled. "Starting points by product category." Marketplace is 🔮, but the entity itself is a core MVP table. |
+| **templates** | ✅ | BUILT 2026-08-08 as static in-code reference data (`src/modules/templates/`, 7 categories) — `GET /templates` + `GET /templates/{id}`. A DB `Template` table is deferred to the v1.1 Marketplace (read contract is identical either way). |
 | exports | ✅ | `Export`. |
 | **notifications** | ❌ | Not modelled. Currently ACTIVE "challenge before building" — may be cut (dashboard nextAction may cover V1). |
 | **subscriptions** | ❌ | Not modelled. Billing; post-deploy. |
@@ -57,8 +57,8 @@ Extra tables we have that PRD didn't enumerate: `HealthScore`, `AiInteraction`, 
 - ✅ **AI Challenge Mode** — follow-up endpoint pushes back.
 - ✅ **Agmund Score™ (Product Health Score)**.
 - ✅ **Decision Log**.
-- ❌ **The Living Blueprint's Dynamic Impact Analysis** (P1) — editing one section should surface what else is affected. Edits currently just save. Spec approach: extend the `PATCH /blueprint/sections/{key}` response with `impactAnalysis: { affectedSections: [{ sectionKey, reason }], generatedAt }`; needs a cross-section AI call — make it async/SSE if it blows the 300ms P95 budget.
-- ❌ **AI Confidence Meter** in the discovery interview (P1) — add `confidence` (0–100) + `confidenceLabel` (LOW/MEDIUM/HIGH) to the answer object, computed on submit, surfaced in `POST /discovery/answers` and `GET /discovery`.
+- ✅ **The Living Blueprint's Dynamic Impact Analysis** — BUILT 2026-08-08 as a dedicated on-demand endpoint `POST /blueprint/sections/{key}/impact-analysis` → `{ impactAnalysis: { affectedSections:[{sectionKey,reason}], generatedAt } }` (chose a separate endpoint over coupling to PATCH, to protect the 300ms save budget — the spec flagged this). Not persisted. GPT-5-verified.
+- ✅ **AI Confidence Meter** — BUILT 2026-08-08: `confidence` (0–100) + `confidenceLabel` (LOW/MEDIUM/HIGH) stored in the answer JSONB, graded by AI on submit (best-effort → null if AI off; re-graded only when the answer text changes). Surfaced in `POST /discovery/answers` and `GET /discovery`.
 - ✅ **Founder Copilot / AI Product Strategist** — BUILT 2026-08-08 (on-demand generation). Spec also wants **proactive trigger wiring** (auto-generate/refresh after `discovery/complete`, after blueprint generation, and after health-score compute when a dimension drops below a threshold) — not yet built; see §8.
 
 ---
@@ -138,9 +138,9 @@ The spec independently confirmed our whole gap list (same v1.0 P0/P1s, same v1.1
 1. ✅ ~~AI Recommendations~~ — DONE 2026-08-08, reshaped to the spec (§8C).
 2. ✅ ~~Health-score dimension fix~~ — DONE 2026-08-08 (now 7 dims).
 3. ✅ ~~Version History~~ — DONE 2026-08-08.
-4. **Blueprint Impact Analysis** + **Discovery Confidence Meter** ← NEXT — polish on existing features.
-5. **Template entity** (7 fixed categories) — precedes Templates Marketplace (v1.1).
-6. **Workspace CRUD + membership** — precedes Team Collaboration (v1.1).
-7. **P2:** Notifications, Search, Comments, AI Chat — interleave with frontend needs.
+4. ✅ ~~Blueprint Impact Analysis + Discovery Confidence Meter~~ — DONE 2026-08-08.
+5. ✅ ~~Template entity~~ — DONE 2026-08-08 (static in-code, 7 categories).
+6. ✅ ~~Workspace CRUD + membership~~ — DONE 2026-08-09 (precedes Team Collaboration v1.1). **← all P0/P1 MVP gaps now closed.**
+7. **P2:** Notifications, Search, Comments, AI Chat ← NEXT — interleave with frontend needs.
 8. **Test harness** — not on the spec's list but our biggest Definition-of-Done gap (§5); slot in early to protect everything above.
 9. v1.1 (§6), then v2+ (§6) once usage justifies.
