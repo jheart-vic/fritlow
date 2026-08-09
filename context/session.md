@@ -5,6 +5,22 @@
 
 ---
 
+## Session 9 — 2026-08-08
+
+### Done — Version History (#3) built + verified
+- New `BlueprintSectionVersion` model (migration `20260808130000_add_blueprint_section_versions`): snapshot of a section's content taken BEFORE each edit; fields `blueprintSectionId, sectionKey, projectId, content(JSONB), versionNumber, editedById, createdAt`. Back-relations added to `BlueprintSection`, `Project`, `User`.
+- `blueprint.service.ts`: added `getOwnedSection` helper; `updateSection` now snapshots the outgoing content (versionNumber = priorCount+1, editedById = actor) then overwrites, atomically in a `$transaction`. New `listSectionVersions` (newest first, includes `editedBy {id, fullName}`) and `restoreSectionVersion` (non-destructive: snapshots current content as a new version, then sets content to the chosen version).
+- Routes: `GET /blueprint/sections/:sectionKey/versions`, `POST /blueprint/sections/:sectionKey/versions/:versionId/restore` (+ OpenAPI). Swagger `BlueprintSectionVersion` schema. Frontend-guide §4 "Version history" subsection.
+- **E2E-verified** (seeded a blueprint+section to skip the slow AI gen): empty before edits → v1=ORIGINAL after edit1 → v2=EDIT ONE after edit2 (newest-first, editedBy present); restore v1 → content=ORIGINAL and a v3 snapshot of EDIT TWO created (forward history preserved); unknown version 404, unknown section 404. Test data cleaned.
+
+### Infra note (recurring)
+- Neon's **direct** endpoint (used by `migrate`) was unreachable (P1001) for a while even though the **pooled** endpoint (app runtime) worked fine — diagnosed via a pooled `SELECT 1`. Worked around by staging a hand-written migration and applying with `prisma migrate deploy` once the direct endpoint recovered. `prisma generate` works fully offline, so code + typecheck were done while the DB was down.
+
+### Next
+- **Impact Analysis + Confidence Meter** (#4). Then Template entity, Workspace CRUD, P2s; test harness slotted early. Deferred: Recommendation proactive triggers.
+
+---
+
 ## Session 8 — 2026-08-08
 
 ### Done

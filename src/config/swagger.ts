@@ -156,6 +156,28 @@ export const swaggerSpec = swaggerJsdoc({
             updatedAt: { type: 'string', format: 'date-time' },
           },
         },
+        BlueprintSectionVersion: {
+          type: 'object',
+          description: 'A historical snapshot of a blueprint section (the content before an edit replaced it).',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            versionNumber: { type: 'integer', example: 3 },
+            sectionKey: { type: 'string', example: 'mvp_scope' },
+            content: {
+              type: 'object',
+              properties: { markdown: { type: 'string' } },
+            },
+            editedBy: {
+              type: 'object',
+              description: 'The user whose edit replaced this content',
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                fullName: { type: 'string' },
+              },
+            },
+            createdAt: { type: 'string', format: 'date-time' },
+          },
+        },
         Blueprint: {
           type: 'object',
           properties: {

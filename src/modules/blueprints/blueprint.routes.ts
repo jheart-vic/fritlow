@@ -147,3 +147,82 @@ blueprintRouter.patch(
   validateBody(updateSectionSchema),
   blueprintController.updateSection,
 );
+
+/**
+ * @openapi
+ * /api/v1/projects/{projectId}/blueprint/sections/{sectionKey}/versions:
+ *   get:
+ *     tags: [Blueprint]
+ *     summary: List a section's edit history (newest first)
+ *     description: Each entry is the section's content as it was BEFORE an edit (or restore) replaced it, with who made that edit and when. Empty until the section has been edited at least once.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: path
+ *         name: sectionKey
+ *         required: true
+ *         schema: { type: string, example: "mvp_scope" }
+ *     responses:
+ *       200:
+ *         description: Version history
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 versions:
+ *                   type: array
+ *                   items: { $ref: '#/components/schemas/BlueprintSectionVersion' }
+ *       404:
+ *         description: No blueprint, or unknown section key
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ */
+blueprintRouter.get('/sections/:sectionKey/versions', blueprintController.listSectionVersions);
+
+/**
+ * @openapi
+ * /api/v1/projects/{projectId}/blueprint/sections/{sectionKey}/versions/{versionId}/restore:
+ *   post:
+ *     tags: [Blueprint]
+ *     summary: Restore a section to a prior version
+ *     description: Rolls the section's content back to the chosen version. Non-destructive — the current content is first snapshotted as a new version, so forward history is never lost. Returns the updated section.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: path
+ *         name: sectionKey
+ *         required: true
+ *         schema: { type: string, example: "mvp_scope" }
+ *       - in: path
+ *         name: versionId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: The section after restore
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 section: { $ref: '#/components/schemas/BlueprintSection' }
+ *       404:
+ *         description: No blueprint, unknown section key, or version not found for this section
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ */
+blueprintRouter.post(
+  '/sections/:sectionKey/versions/:versionId/restore',
+  blueprintController.restoreSectionVersion,
+);
