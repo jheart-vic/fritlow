@@ -19,6 +19,17 @@ enum WorkspaceRole {
   MEMBER
 }
 
+// Platform-level role (Fritlow staff), DELIBERATELY distinct from WorkspaceRole
+// (OWNER/ADMIN/MEMBER, per-tenant) — no shared value, so a workspace ADMIN has
+// zero platform power and vice versa. USER = a normal end user. SUPPORT =
+// Fritlow support staff. SUPERADMIN = full platform admin (seeded from .env,
+// never self-serve). Both staff roles reach the /api/v1/admin surface.
+enum PlatformRole {
+  USER
+  SUPPORT
+  SUPERADMIN
+}
+
 // Lifecycle of an invitation sent to an email that has no account yet.
 // PENDING → ACCEPTED (consumed when that email registers) or REVOKED.
 enum InvitationStatus {
@@ -44,6 +55,7 @@ model User {
   // Null until the user clicks the verification link; the timestamp (not a
   // boolean) records WHEN they verified — useful for audits later.
   emailVerifiedAt DateTime?
+  platformRole    PlatformRole @default(USER)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -56,6 +68,7 @@ model User {
   exports         Export[]
   blueprintSectionVersions BlueprintSectionVersion[]
   sentInvitations WorkspaceInvitation[]
+  comments        Comment[]
 }
 
 // Tenancy root: every project will live inside a workspace.
@@ -173,6 +186,7 @@ model BlueprintSection {
   blueprintId String
 
   versions BlueprintSectionVersion[]
+  comments Comment[]
 
   @@unique([blueprintId, key])
 }
@@ -198,6 +212,35 @@ model BlueprintSectionVersion {
 
   @@index([blueprintSectionId])
   @@index([projectId])
+}
+
+// A discussion note anchored to a blueprint section (the spec anchors comments
+// to sections, not projects). Threaded: a reply sets `parentId` to the comment
+// it answers; deleting a parent cascades to its replies. `sectionKey` is a
+// denormalized snapshot (like BlueprintSectionVersion) for convenient scoping.
+model Comment {
+  id        String   @id @default(uuid())
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project            Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId          String
+  section            BlueprintSection @relation(fields: [blueprintSectionId], references: [id], onDelete: Cascade)
+  blueprintSectionId String
+  sectionKey         String
+  author             User             @relation(fields: [authorId], references: [id])
+  authorId           String
+
+  // Threading. A top-level comment has parentId = null; a reply points at its
+  // parent. onDelete: Cascade so deleting a thread root removes its replies.
+  parent   Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  parentId String?
+  replies  Comment[] @relation("CommentReplies")
+
+  @@index([blueprintSectionId])
+  @@index([projectId])
+  @@index([parentId])
 }
 
 enum DecisionStatus {
@@ -331,6 +374,7 @@ model Project {
   exports                Export[]
   healthScore            HealthScore?
   blueprintSectionVersions BlueprintSectionVersion[]
+  comments               Comment[]
 
   @@index([workspaceId])
 }

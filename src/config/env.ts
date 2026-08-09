@@ -55,6 +55,13 @@ const envSchema = z.object({
   // because these are unauthenticated and each hit spends real Brevo quota.
   EMAIL_RATE_LIMIT_WINDOW_MIN: z.coerce.number().int().positive().default(60),
   EMAIL_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(3),
+  // Platform admin (Fritlow staff). The SUPERADMIN account is provisioned from
+  // these on startup — it never registers, it just logs in with these creds.
+  // Both optional: if unset, no admin is seeded. .env is the source of truth for
+  // this account's password (a restart re-syncs it).
+  ADMIN_EMAIL: z.email().optional(),
+  ADMIN_PASSWORD: z.string().min(8, 'ADMIN_PASSWORD must be at least 8 characters').optional(),
+  ADMIN_NAME: z.string().default('Fritlow Admin'),
   // How many proxy hops sit in front of the API (Render/Nginx = 1). Tells
   // Express to trust that many X-Forwarded-For entries so req.ip is the real
   // client, not the proxy — otherwise every request shares one bucket.

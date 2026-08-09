@@ -5,6 +5,80 @@
 
 ---
 
+## Session 16 — 2026-08-09
+
+### Planning — user raised 3 new asks (account deletion, notifications need?, Fritlow-internal admin side)
+Confirmed scope + laid out a 4-phase plan; user chose (via decision prompt): **anonymize-shared/cascade-personal** for deletion, **platformRole-on-User + seed script** for admin auth, **build account deletion first**.
+- **My read on Notifications:** not worth it for solo V1, but now justified by Comments (multi-user) + the planned support chat → build lean/event-driven later (Phase 4).
+- **Planned phases:** 1) Account deletion ✅ 2) Admin foundation (platformRole USER/SUPPORT/ADMIN + `requirePlatformAdmin` + `/admin/*` stats/users monitoring; note: NO analytics-events table yet, derive proxies from timestamps) 3) Support chat (admin↔user; `SupportConversation`/`SupportMessage`; polling for V1) 4) Notifications (`GET /notifications`, `PATCH /:id/read`, `POST /read-all`; fire-and-forget triggers). Sentinel excluded from admin stats later (by email).
+
+### Done — #1 Account deletion (Phase 1)
+- `DELETE /api/v1/settings/account`, body `{ password }` (re-auth). Added to settings module (schema/service/controller/route + OpenAPI).
+- **Data strategy (chosen): anonymize shared, cascade personal.** A shared sentinel user `deleted-user@fritlow.internal` ("Deleted User", unusable password) inherits authorship of the deleted user's content in workspaces others still use.
+- **Logic:** classify each membership — only-member workspace → `deleteMany` (cascades projects/blueprints/comments/decisions/etc.); shared workspace where user is the **sole OWNER with other members** → **block 400** (transfer/remove first). Then in one tx: delete sole-member workspaces, reassign surviving authored rows to sentinel (Project.createdById, DecisionLog.createdById, Comment.authorId, BlueprintSectionVersion.editedById, Export.createdById, WorkspaceInvitation.invitedById — the 6 RESTRICT FKs), then `user.delete` (memberships + RefreshToken/EmailVerification/PasswordReset cascade). `AiInteraction.userId` is relation-free → logs survive by design.
+- **Sole owner + only member CAN delete** (their workspace cascades) — the block is ONLY when other members would be orphaned. (User asked; confirmed.)
+- **E2E-verified + DB-verified:** wrong pw→401; sole-owner-of-shared-with-members→400; solo delete→204, login after→401; personal project cascade-deleted; shared project + decision survive with createdBy="Deleted User"; sentinel created. Test data + sentinel cleaned.
+- frontend-guide §10 updated with the DELETE /account row. **Open question surfaced to user:** whether the blocked (last-owner) case should offer auto-transfer / opt-in workspace-delete instead of hard block.
+
+### Done — #2 Admin foundation (Phase 2)
+- **`platformRole` enum USER/SUPPORT/ADMIN** added to `User` (default USER) — platform-level, distinct from per-tenant WorkspaceRole. New `requirePlatformRole(...roles)` middleware ([src/middleware/platform-role.ts](../src/middleware/platform-role.ts)) — reads role from **DB not JWT** → instant revocation (verified: demote→403 on same token).
+- New `src/modules/admin/` behind `requireAuth` + `requirePlatformRole('ADMIN','SUPPORT')`, mounted `/api/v1/admin`:
+  - `GET /admin/stats` — platform-wide counts (users total/verified/new7/new30, workspaces, projects+byStatus+active7d, discovery sessions/completed/rate, blueprints, recommendations, exports). Sentinel excluded.
+  - `GET /admin/users?page&limit&q` — paginated search (email+fullName), each with project/workspace counts.
+  - `GET /admin/users/:id` — detail: workspaces(+role), projects, activity summary.
+- **Seed:** [scripts/make-admin.ts](../scripts/make-admin.ts) — `npx tsx scripts/make-admin.ts <email> [ADMIN|SUPPORT|USER]`. Only way to grant staff.
+- Swagger `AdminStats`/`AdminUserSummary`/`AdminUserDetail`; frontend-guide new §17.
+- **E2E-verified:** normal→403, no-auth→401, promote→stats 200 (all metrics), users list paginated+search, detail w/ workspaces+projects+activity, unknown→404, SUPPORT→200, demote→instant 403. Test data cleaned; server stopped; typecheck clean.
+- **Caveat (analytics):** engagement = timestamp proxies (projects touched in 7d); no product-analytics events table yet (known PRD gap).
+
+### Refinement (same session, user asks) — platform roles renamed + admin is env-seeded, not registered
+- **Naming de-collision:** platform role `ADMIN` → **`SUPERADMIN`** (enum now USER/SUPPORT/SUPERADMIN) so there is ZERO overlap with WorkspaceRole (OWNER/ADMIN/MEMBER) — the two axes were already separate columns; this removes the shared word. Renamed live enum via pooled `ALTER TYPE ... RENAME VALUE 'ADMIN' TO 'SUPERADMIN'`; edited the staged `add_platform_role` migration.sql to create the enum already-final; regen client. Updated middleware call, make-admin (default now SUPPORT), swagger, docs.
+- **Admin never registers — logs in from env.** New `ADMIN_EMAIL`/`ADMIN_PASSWORD`/`ADMIN_NAME` env (config/env.ts + .env.example). New `seedPlatformAdmin()` ([src/modules/admin/admin.seed.ts](../src/modules/admin/admin.seed.ts)) upserts the SUPERADMIN on boot (called in server.ts, fire-and-forget, idempotent); .env is source of truth (re-syncs password/role/verified each boot). Admin uses the **normal `POST /auth/login`** — no separate admin auth. Registering with the admin email → 409. make-admin.ts stays for adding SUPPORT staff.
+- **E2E-verified:** boot seeds `[admin] platform SUPERADMIN ready`; login with env creds → token; `/admin/stats` 200 (after one transient Neon ConnectionClosed 500 → retry OK); `/admin/users?q` shows platformRole SUPERADMIN; register-as-admin → 409. Test admin (boss@fritlow.io) cleaned. typecheck clean.
+- **Login endpoint** (user asked): single shared `POST /api/v1/auth/login` — admin is not special-cased, only its `platformRole` differs.
+
+### ⚠️ MIGRATION GOTCHA — needs reconciliation when Neon direct endpoint recovers
+Neon's **direct** endpoint was down (P1001) during this session; **pooled** was up. So `add_platform_role` migration file is staged at `prisma/migrations/20260809132014_add_platform_role/` but the **DDL was applied via the POOLED connection** (raw `CREATE TYPE`+`ALTER TABLE`), NOT through `prisma migrate` — so it is **NOT recorded in `_prisma_migrations`**. **TO DO when direct endpoint is reachable:** run `npx prisma migrate resolve --applied 20260809132014_add_platform_role` (marks it applied without re-running — re-running would fail on "type already exists"). Until then `migrate dev`/`deploy` will think it's pending. The DB column exists and works at runtime (pooled).
+
+### Next
+- Phase 3: **Support chat** (admin↔user; `SupportConversation`/`SupportMessage`; polling V1). Then Phase 4 Notifications. Test harness still biggest DoD gap.
+
+---
+
+## Session 15 — 2026-08-09
+
+### Done — P2 tier: Comments (built exactly to the frontend build spec)
+- User supplied the **full build spec** (`FRITLOW_Backend_Gap_Analysis_and_Build_Spec.md`) — item 10 Comments. Built to its exact paths:
+  - `POST /api/v1/projects/{projectId}/blueprint/sections/{sectionKey}/comments`
+  - `GET  /api/v1/projects/{projectId}/blueprint/sections/{sectionKey}/comments`
+  - `DELETE /api/v1/comments/{id}` ← **flat/top-level per spec**, NOT nested. Threaded via optional `parentId`.
+- New `Comment` model (migration `20260809061233_add_comments`): body, projectId, blueprintSectionId, sectionKey (denormalized), authorId, `parentId` self-relation (`CommentReplies`, onDelete Cascade → deleting a thread root removes replies). Back-relations on User/Project/BlueprintSection. **Comments anchor to a SECTION, not the project** (matching the spec — no project-level comments).
+- New `src/modules/comments/` (schemas/service/controller/**two routers**: `commentSectionRouter` mergeParams for create/list at the deep path, `commentRouter` for the flat DELETE). Mounted both in app.ts.
+- **Access:** any project member reads/posts (via `getProject` membership gate); a reply's parent must be on the SAME section (else 404). **Delete:** author OR workspace OWNER/ADMIN (resolves workspace from the comment since the DELETE path has no projectId). No edit endpoint — spec only lists POST/GET/DELETE.
+- `GET` returns a **threaded tree**: top-level comments (oldest first), each with nested `replies[]` (built in-memory by parentId, any depth). Comment shape: `{ id, body, projectId, sectionKey, parentId, author{id,fullName}, createdAt, updatedAt, replies[] }`.
+- Swagger `Comment` schema (recursive `replies`); frontend-guide new §14 (Errors→15, Rate limiting→16).
+- **E2E-verified:** A posts top-level; B (member) replies w/ parentId → nested correctly; reply w/ parent from a different section → 404; unknown section → 404; empty body → 400; no auth → 401; **delete matrix:** B(member,non-author)→403, author→204, OWNER-deletes-member's→204, unknown→404; **cascade** (delete parent → replies gone, list empty); **tenancy** (outsider list/post → 403). Blueprint sections seeded directly (no AI); test data cleaned; server stopped; typecheck clean.
+
+### Next (P2 remaining)
+- **Decide Notifications** (spec item 8: `GET /notifications`, `PATCH /:id/read`, `POST /read-all`; triggers: discovery follow-up ready, blueprint complete, recommendation created) — still challenge scope, but the spec gives a concrete minimal contract. Then **AI Chat** (spec item 11: `POST /projects/{id}/chat`, SSE, `ChatConversation`/`ChatMessage`). Test harness still the biggest DoD gap.
+
+---
+
+## Session 14 — 2026-08-09
+
+### Done — P2 tier started: Search (first P2 feature)
+- New `src/modules/search/` (schemas/service/controller/routes). `GET /api/v1/search?q=&limit=` (requireAuth, no new tables). Case-insensitive substring search across **projects** (name/oneLineIdea/category), **blueprint sections** (title + JSONB `content->>'markdown'`), **decisions** (title/reasoning), and **recommendations** (title/body). **Tenancy-scoped** via `workspace.members.some.userId` nested filters (raw query for sections joins `WorkspaceMember` explicitly). `q` min 2 chars (400 otherwise); `limit` 1–50 default 10, applied **per type**.
+- **Blueprint section body** search uses a parameterized `prisma.$queryRaw` with `ILIKE` on `content->>'markdown'` — Prisma's JSON filters are case-SENSITIVE, so raw SQL gets case-insensitive matching on the JSONB markdown. Injection-safe (tagged-template bind params).
+- Response: `{ query, counts:{project,blueprint_section,decision,recommendation,total}, results:[] }`; each result `{ type, id, title, snippet, projectId, projectName, sectionKey? }`. `snippet` = ~90-char window around the first match. Flat list, grouped client-side.
+- Swagger `SearchResult` + `SearchResults` schemas; frontend-guide new §13 (Errors→14, Rate limiting→15); fixed the stale §12 note (non-user invites now work).
+- **E2E-verified:** q=flamingo → all 4 types hit with correct snippets + sectionKey; q=STRIPE (uppercase) → case-insensitive decision hit; q=zephyr → project only; q=x → 400; no-auth → 401; **cross-user outsider → 0 results (tenancy holds)**. Blueprint section + recommendation seeded directly (no AI cost); test data cleaned.
+
+### Next (P2 remaining)
+- **Comments** (next): new `Comment` model (project + optional blueprintSection target, author, body, resolved?), CRUD scoped to project members. Pairs with the workspace membership + feeds any future Notifications.
+- Then **decide Notifications** (challenge scope — dashboard `nextAction` may cover V1), then **AI Chat** (SSE, largest). Test harness still the biggest DoD gap — slot in early; Search/Comments are good deterministic first targets.
+
+---
+
 ## Session 13 — 2026-08-09
 
 ### Done — two deferred items pulled forward

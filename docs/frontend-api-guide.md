@@ -267,11 +267,12 @@ The "what should I do next?" screen in one call:
 
 ## 10. Settings — `/api/v1/settings` (Bearer required)
 
-Backs the Settings screen. All three act on the authenticated user.
+Backs the Settings screen. All act on the authenticated user.
 
 - **`PATCH /profile`** — update your own display name. Body `{ "fullName": "Ada Lovelace" }` → `{ user }`. (Email changes are out of scope for V1 — they'd need re-verification.)
 - **`POST /password`** — change your password while logged in. Body `{ "currentPassword": "…", "newPassword": "…" }`. Verifies the current password (wrong → **401**), then **revokes every session** (all refresh tokens). After this call the refresh cookie is dead, so route the user back to login — the success message is "Password updated. Please log in again."
 - **`PATCH /workspaces/:workspaceId`** — rename a workspace you belong to. Body `{ "name": "Acme Product Team" }` → `{ workspace }`. Only **OWNER/ADMIN** may rename (others get **403**). You can read a `workspaceId` off any project (`project.workspaceId`).
+- **`DELETE /account`** — permanently delete your own account. Body `{ "password": "…" }` (re-auth required) → **204**. **Irreversible.** Deletes your personal workspace(s) and everything in them; content you authored in *shared* workspaces is kept but reassigned to a "Deleted User" placeholder so teammates' threads/history survive. Wrong password → **401**. If you're the **sole owner of a shared workspace that still has other members**, you get **400** — transfer ownership (`PATCH /workspaces/:id/members/:userId` → OWNER) or remove the members first, then retry. All sessions are revoked; send the user to a signed-out state. Recommend a confirm dialog (type-to-confirm) before calling.
 
 ---
 
@@ -313,11 +314,51 @@ Member: `{ userId, role, createdAt, user: { id, fullName, email } }`.
 
 RBAC guardrails (all return a clear 4xx): only an **OWNER** may grant the OWNER role or change/remove an existing owner; a workspace must always keep **at least one owner** (last-owner demote/remove → 400); MEMBERs can't manage anyone (403).
 
-Note: renaming a workspace still lives at `PATCH /settings/workspaces/:workspaceId` (§10). Inviting people who don't yet have an account (email invite + acceptance) is a later version.
+Note: renaming a workspace still lives at `PATCH /settings/workspaces/:workspaceId` (§10). Inviting people who don't yet have an account now works (see the invite row above): a PENDING invitation is stored and consumed automatically when that email registers. There is no explicit accept/revoke endpoint yet.
 
 ---
 
-## 13. Errors — one shape everywhere
+## 13. Search — `GET /api/v1/search` (Bearer required)
+
+Case-insensitive substring search across your **projects**, **blueprint sections**, **decisions**, and **recommendations** — scoped to the workspaces you belong to (you never see other tenants' content).
+
+| Method + path | Query | Success | Notes |
+|---|---|---|---|
+| `GET /` | `q` (required, ≥2 chars), `limit?` (1–50, default 10) | **200** `SearchResults` | `limit` caps results **per type**. `q` under 2 chars → 400. |
+
+`SearchResults`:
+```json
+{
+  "query": "flamingo",
+  "counts": { "project": 1, "blueprint_section": 1, "decision": 1, "recommendation": 1, "total": 4 },
+  "results": [
+    { "type": "project", "id": "...", "title": "Zephyr Analytics", "snippet": "…flamingo migration…", "projectId": "...", "projectName": "Zephyr Analytics" },
+    { "type": "blueprint_section", "id": "...", "title": "Target Audience", "snippet": "…flamingo colonies…", "projectId": "...", "projectName": "Zephyr Analytics", "sectionKey": "target_audience" }
+  ]
+}
+```
+
+Every result carries `type`, `title`, a `snippet` (a text window around the match), and `projectId` + `projectName` so you can group by project and deep-link. `blueprint_section` results also include `sectionKey`. The list is flat (projects, then sections, then decisions, then recommendations) — group it client-side however the UI needs.
+
+---
+
+## 14. Comments — on blueprint sections
+
+Discussion threads anchored to a **blueprint section**. Any project member can read and post; a comment is deletable by its author or by a workspace OWNER/ADMIN. Threaded via optional `parentId`.
+
+| Method + path | Body | Success | Notes |
+|---|---|---|---|
+| `POST /api/v1/projects/:projectId/blueprint/sections/:sectionKey/comments` | `{ body, parentId? }` | **201** `{ comment }` | `parentId` = reply within a thread (must be a comment on the **same** section, else 404). Unknown section → 404. |
+| `GET /api/v1/projects/:projectId/blueprint/sections/:sectionKey/comments` | — | **200** `{ comments }` | Threaded: top-level comments (oldest first), each with nested `replies`. |
+| `DELETE /api/v1/comments/:id` | — | **204** | ⚠️ **Flat path — not nested under the project.** Author, or workspace OWNER/ADMIN. Deleting a parent **cascades** its replies. 403 otherwise, 404 if gone. |
+
+`Comment`: `{ id, body, projectId, sectionKey, parentId (null for top-level), author: { id, fullName }, createdAt, updatedAt, replies: Comment[] }`. `replies` is populated on the GET (tree) response and empty (`[]`) on a freshly created comment.
+
+Note the DELETE endpoint deliberately lives at the top-level `/api/v1/comments/:id` (per the backend spec), unlike create/list which are section-scoped.
+
+---
+
+## 15. Errors — one shape everywhere
 
 ```json
 { "error": "Human-readable message" }
@@ -334,7 +375,7 @@ Validation failures (400 from zod) add a `details` array of per-field messages. 
 
 ---
 
-## 14. Rate limiting (auth endpoints only)
+## 16. Rate limiting (auth endpoints only)
 
 The unauthenticated auth endpoints are rate limited per client IP. Over the limit, the API returns **429** with the standard error shape and these response headers:
 
@@ -353,6 +394,22 @@ Limits (defaults — configurable server-side):
 | `resend-verification`, `forgot-password` (each sends a real email) | 3 per hour |
 
 Practical UX: the email-sending endpoints are the tight ones. After a user requests a verification/reset email, disable the "resend" button and show a "try again in X" countdown driven by `Retry-After` rather than letting them spam it into a 429.
+
+---
+
+## 17. Admin — `/api/v1/admin` (Fritlow staff only)
+
+**Not part of the end-user product.** This is the Fritlow-internal admin surface, for a separate staff console. Every endpoint requires a normal Bearer token **plus** a platform role of `SUPPORT` or `SUPERADMIN`. This is a **completely separate axis** from workspace roles (`OWNER/ADMIN/MEMBER`) — a workspace ADMIN has no platform access, and there is no shared value between the two. Normal users always get **403** here. Role changes take effect immediately (the guard reads the DB, not the token).
+
+**The SUPERADMIN doesn't register — it logs in.** The admin account is provisioned from the server's `ADMIN_EMAIL` / `ADMIN_PASSWORD` env vars on startup; the admin simply calls the normal `POST /auth/login` with those credentials to get a token, then uses the `/admin/*` endpoints. (Additional SUPPORT staff can be promoted from existing accounts server-side via `npx tsx scripts/make-admin.ts <email> SUPPORT`.)
+
+| Method + path | Query | Success | Notes |
+|---|---|---|---|
+| `GET /admin/stats` | — | **200** `AdminStats` | Platform-wide counts across ALL workspaces: users (total/verified/new), projects by status, discovery completion rate, blueprints, recommendations, exports, plus a 7-day activity proxy. |
+| `GET /admin/users` | `page?`, `limit?` (≤100), `q?` | **200** `{ page, limit, total, totalPages, users }` | Paginated. `q` searches email + full name. Each row has `projectCount` + `workspaceCount`. |
+| `GET /admin/users/:id` | — | **200** `{ user }` | Detail: their workspaces (+ role), projects, and an activity summary. 404 if unknown. |
+
+The `deleted-user@fritlow.internal` anonymization placeholder is excluded from all counts and listings. Engagement figures are timestamp-derived proxies for now (there's no product-analytics events table yet).
 
 ---
 

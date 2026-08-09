@@ -4,6 +4,7 @@ import { validateBody } from '../../middleware/validate';
 import * as settingsController from './settings.controller';
 import {
   changePasswordSchema,
+  deleteAccountSchema,
   renameWorkspaceSchema,
   updateProfileSchema,
 } from './settings.schemas';
@@ -85,6 +86,45 @@ settingsRouter.patch('/profile', validateBody(updateProfileSchema), settingsCont
  *             schema: { $ref: '#/components/schemas/Error' }
  */
 settingsRouter.post('/password', validateBody(changePasswordSchema), settingsController.changePassword);
+
+/**
+ * @openapi
+ * /api/v1/settings/account:
+ *   delete:
+ *     tags: [Settings]
+ *     summary: Permanently delete your own account
+ *     description: >-
+ *       Irreversible. Requires your password. Deletes your personal workspace(s) and everything in
+ *       them (projects, blueprints, discovery, comments, decisions…). Content you authored in SHARED
+ *       workspaces is kept but reassigned to a "Deleted User" placeholder so teammates' threads and
+ *       history stay intact. If you are the SOLE owner of a shared workspace that still has other
+ *       members, deletion is blocked (400) until you transfer ownership or remove them. All your
+ *       sessions are revoked.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [password]
+ *             properties:
+ *               password: { type: string, description: "Your current password, to confirm" }
+ *     responses:
+ *       204: { description: "Account deleted" }
+ *       400:
+ *         description: Validation failed, or you are the sole owner of a shared workspace
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *       401:
+ *         description: Missing/invalid token, or wrong password
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ */
+settingsRouter.delete('/account', validateBody(deleteAccountSchema), settingsController.deleteAccount);
 
 /**
  * @openapi
