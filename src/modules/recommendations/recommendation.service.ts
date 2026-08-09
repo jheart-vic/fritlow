@@ -68,7 +68,13 @@ async function buildContext(projectId: string): Promise<{ context: string; answe
 
 export async function generateRecommendations(userId: string, projectId: string) {
   await getProject(userId, projectId); // membership gate + 404
+  return runGeneration(userId, projectId);
+}
 
+// The generation guts, minus the membership gate. Shared by the on-demand
+// endpoint (which gates first) and the proactive triggers (system-invoked with
+// a userId we already trust). Throws on insufficient context / AI failure.
+async function runGeneration(userId: string, projectId: string) {
   const { context, answerCount } = await buildContext(projectId);
   if (answerCount < MIN_ANSWERS) {
     throw ApiError.badRequest(
@@ -148,6 +154,22 @@ export async function generateRecommendations(userId: string, projectId: string)
   );
 
   return listRecommendations(userId, projectId, {});
+}
+
+// Proactive, fire-and-forget refresh. Called after events that change what the
+// Strategist would say (discovery completed, blueprint generated, a low health
+// dimension). Deliberately NOT awaited by callers and never throws: a failure
+// here must not slow or break the action that triggered it. Skips quietly when
+// there isn't enough context yet (the runGeneration MIN_ANSWERS guard).
+export function triggerRecommendations(userId: string, projectId: string, reason: string): void {
+  void runGeneration(userId, projectId)
+    .then(() => {
+      console.log(`[recommendations] proactively refreshed for ${projectId} (${reason})`);
+    })
+    .catch((err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[recommendations] proactive trigger (${reason}) skipped for ${projectId}: ${msg}`);
+    });
 }
 
 export async function listRecommendations(

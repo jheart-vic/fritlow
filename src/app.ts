@@ -16,6 +16,8 @@ import { healthScoreRouter } from './modules/health/health.routes';
 import { projectRouter } from './modules/projects/project.routes';
 import { recommendationRouter } from './modules/recommendations/recommendation.routes';
 import { settingsRouter } from './modules/settings/settings.routes';
+import { templateRouter } from './modules/templates/templates.routes';
+import { workspaceRouter } from './modules/workspaces/workspace.routes';
 
 // app.ts builds the Express app (middleware + routes) without starting it,
 // so tests can import the app without opening a network port.
@@ -62,6 +64,8 @@ app.use('/api/v1/projects/:projectId/export', exportRouter);
 app.use('/api/v1/projects/:projectId/health-score', healthScoreRouter);
 app.use('/api/v1/dashboard', dashboardRouter);
 app.use('/api/v1/settings', settingsRouter);
+app.use('/api/v1/templates', templateRouter);
+app.use('/api/v1/workspaces', workspaceRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

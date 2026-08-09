@@ -79,7 +79,7 @@ The signature feature. V1 has a fixed bank of **10 questions across 5 modules** 
 |---|---|---|---|
 | `POST /` | — | **201** session + progress | Starts the interview, flips project to DISCOVERY. 409 if already started |
 | `GET /` | — | **200** (below) | The resume screen: session + all answers + progress + next question |
-| `POST /answers` | `{ questionId, answer, followUpAnswer? }` | **200** `{ answered, total, nextQuestion }` | Upsert — re-answering the same question replaces it. Returns fresh progress so the UI can advance without a re-fetch. 400 if session closed |
+| `POST /answers` | `{ questionId, answer, followUpAnswer? }` | **200** `{ answered, total, nextQuestion, confidence, confidenceLabel }` | Upsert — re-answering the same question replaces it. `confidence` (0–100) + `confidenceLabel` (LOW/MEDIUM/HIGH) are the **AI confidence meter** for the answer just submitted, or `null` if the server has no AI key. 400 if session closed |
 | `POST /answers/:questionId/follow-up` | — | **200** `{ questionId, followUp }` | **AI Challenge Mode**: generates one probing follow-up question about this answer. 400 if question unanswered; 503 if server has no AI key. Reply by re-POSTing `/answers` with `followUpAnswer` |
 | `POST /complete` | — | **200** | Only when all 10 answered — else 400 with a clear message |
 
@@ -90,7 +90,8 @@ The signature feature. V1 has a fixed bank of **10 questions across 5 modules** 
   "session": {
     "id": "…", "status": "ACTIVE", "startedAt": "…", "completedAt": null,
     "answers": [ { "questionId": "problem.core", "questionText": "…", "module": "problem",
-                   "answer": { "text": "…", "followUp": { "question": "…", "answer": "…" } },
+                   "answer": { "text": "…", "confidence": 72, "confidenceLabel": "MEDIUM",
+                               "followUp": { "question": "…", "answer": "…" } },
                    "answeredAt": "…" } ]
   },
   "answered": 3,
@@ -156,6 +157,14 @@ Every `PATCH` snapshots the section's previous content before overwriting, so ed
 | `POST /sections/:sectionKey/versions/:versionId/restore` | **200** `{ section }` | Rolls the section back to that version. **Non-destructive** — current content is snapshotted as a new version first, so forward history survives. 404 if the version isn't for this section. |
 
 Each version: `{ id, versionNumber, sectionKey, content: { markdown }, editedBy: { id, fullName }, createdAt }`. `versionNumber` increments per section (1,2,3…); `editedBy` is the user whose edit replaced this content.
+
+### Dynamic Impact Analysis (per section)
+
+After saving a section, ask which *other* sections the edit may have made inconsistent. This is a **separate on-demand call** (not part of the PATCH response) so saves stay fast — call it when you want the analysis.
+
+- **`POST /sections/:sectionKey/impact-analysis`** → **200** `{ impactAnalysis: { affectedSections: [{ sectionKey, reason }], generatedAt } }`
+  - `affectedSections` is other sections that may now conflict, each with a one-line reason; an **empty array** means nothing else looks affected.
+  - 404 unknown section · 502 AI unparseable · 503 no AI key. Not persisted — it reflects the section's content at call time.
 
 ### SSE streaming (`POST /stream`)
 
@@ -266,7 +275,49 @@ Backs the Settings screen. All three act on the authenticated user.
 
 ---
 
-## 11. Errors — one shape everywhere
+## 11. Templates — `/api/v1/templates` (Bearer required)
+
+Fixed starting points by product category, for the create-project wizard's category step. Read-only reference data (the user-submitted marketplace is a later version).
+
+| Method + path | Success | Notes |
+|---|---|---|
+| `GET /` | **200** `{ templates }` | All 7 templates |
+| `GET /:id` | **200** `{ template }` | 404 for an unknown id |
+
+```json
+{
+  "id": "saas", "category": "SaaS", "name": "SaaS Starter",
+  "description": "…",
+  "prefillDiscoveryHints": { "customer.who": "Name the role and company size…", "…": "…" }
+}
+```
+
+Ids: `saas`, `marketplace`, `mobile_app`, `fintech`, `edtech`, `healthtech`, `social_network`. `prefillDiscoveryHints` maps a discovery question id → a category-specific hint you can show alongside that question during the interview. (Project `category` is still free-text on create — use `template.category` values to populate the wizard's dropdown.)
+
+---
+
+## 12. Workspaces — `/api/v1/workspaces` (Bearer required)
+
+Tenancy management. Everyone gets a personal workspace at registration; these endpoints add more and manage membership. Roles: `OWNER`, `ADMIN`, `MEMBER`.
+
+| Method + path | Body | Success | Notes |
+|---|---|---|---|
+| `POST /` | `{ name }` | **201** `{ workspace }` | You become OWNER. `workspace` includes your `role`. |
+| `GET /` | — | **200** `{ workspaces }` | Every workspace you belong to, each with your `role`. |
+| `GET /:workspaceId/members` | — | **200** `{ members }` | Any member may view. 403 if not a member. |
+| `POST /:workspaceId/members/invite` | `{ email, role? }` | **201** `{ member }` _or_ `{ pending: true, invitation }` | OWNER/ADMIN only. `role` ∈ `ADMIN\|MEMBER` (default MEMBER). **Existing account** → added immediately (`{ member }`) + heads-up email. **Unknown email** → a PENDING invitation is recorded (`{ pending: true, invitation }`) and a signup email sent; they auto-join when they register with that email. `409` only if the existing user is already a member. All emails are best-effort/fire-and-forget. |
+| `PATCH /:workspaceId/members/:userId` | `{ role }` | **200** `{ member }` | OWNER/ADMIN only. |
+| `DELETE /:workspaceId/members/:userId` | — | **204** | OWNER/ADMIN only. |
+
+Member: `{ userId, role, createdAt, user: { id, fullName, email } }`.
+
+RBAC guardrails (all return a clear 4xx): only an **OWNER** may grant the OWNER role or change/remove an existing owner; a workspace must always keep **at least one owner** (last-owner demote/remove → 400); MEMBERs can't manage anyone (403).
+
+Note: renaming a workspace still lives at `PATCH /settings/workspaces/:workspaceId` (§10). Inviting people who don't yet have an account (email invite + acceptance) is a later version.
+
+---
+
+## 13. Errors — one shape everywhere
 
 ```json
 { "error": "Human-readable message" }
@@ -283,7 +334,7 @@ Validation failures (400 from zod) add a `details` array of per-field messages. 
 
 ---
 
-## 12. Rate limiting (auth endpoints only)
+## 14. Rate limiting (auth endpoints only)
 
 The unauthenticated auth endpoints are rate limited per client IP. Over the limit, the API returns **429** with the standard error shape and these response headers:
 

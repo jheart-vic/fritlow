@@ -9,12 +9,12 @@ Working the highest-priority unbuilt MVP items first. Priority order **reconcile
 1. ✅ **AI Recommendations** — DONE; reshaped to the spec 2026-08-08 (type/body/severity INFO-WARNING-CRITICAL/status OPEN-ACK-DISMISSED-RESOLVED/sourceContext, `POST /generate`). GPT-5 verified.
 2. ✅ **Health-score dimension fix** — DONE; now 7 dims (added `technical_complexity` + `market_readiness`, kept `differentiation`).
 3. ✅ **Version History** — DONE 2026-08-08 (`BlueprintSectionVersion`; snapshot-on-PATCH; `GET …/versions` + non-destructive `POST …/restore`). GPT-5-free, E2E-verified.
-4. **Impact Analysis + Confidence Meter** ← NEXT → 5. Template entity → 6. Workspace CRUD + membership → 7. P2 (Notifications/Search/Comments/AI Chat).
+4. ✅ **Impact Analysis + Confidence Meter** — DONE. → 5. ✅ **Template entity** — DONE. → 6. ✅ **Workspace CRUD + membership** — DONE 2026-08-09. **All P0/P1 MVP gaps closed.** → 7. **P2 (Notifications/Search/Comments/AI Chat)** ← NEXT + test harness.
 8. **Test harness** — our biggest DoD gap (not on the spec's list); slot in early.
 
-**Deferred from the Recommendation work:** the spec's **proactive triggers** (auto-generate after discovery-complete / blueprint-gen / low health dim) are NOT built — generation is on-demand only. Wire later, fire-and-forget.
+**~~Deferred from the Recommendation work:~~ DONE (Session 13):** the spec's **proactive triggers** (auto-generate after discovery-complete / blueprint-gen / low health dim <60) are now wired — `triggerRecommendations()`, fire-and-forget, GPT-5-verified.
 
-**Also surfaced by the spec (tracked):** workspace management is missing (only rename exists) — create/list/invite/roles (item 6, prd-backlog §2).
+**~~Also surfaced by the spec:~~ DONE:** workspace management (Session 12) + **non-user email invites** with auto-join-on-signup (Session 13, `WorkspaceInvitation` model).
 
 ### Just built — AI Recommendations / AI Product Strategist (2026-08-08)
 `src/modules/recommendations/` + `Recommendation` model (migration `add_recommendations`). `POST /api/v1/projects/:id/recommendations` (AI generates 3–6 prioritized, accept/rejectable insights from discovery + blueprint + health score), `GET /` (optional `?status`, HIGH-severity first), `PATCH /:id` (ACCEPTED/REJECTED). Regeneration replaces the PENDING batch but keeps ACCEPTED/REJECTED as history. Fully E2E-verified against GPT-5. OpenAPI + frontend-guide §7 (Export→§8 … Rate limiting→§12).
@@ -52,13 +52,12 @@ Note on **Notifications** (P2 above) — still CHALLENGE BEFORE BUILDING: dashbo
 - [x] AI Recommendations / Product Strategist — spec-aligned shape (type/body/severity INFO-WARNING-CRITICAL/status OPEN-ACK-DISMISSED-RESOLVED/sourceContext; `POST /generate`); regen keeps decisions; GPT-5 verified. (Proactive triggers deferred.)
 - [x] Health-score dimension fix — now 7 dims (technical_complexity + market_readiness added; differentiation kept)
 - [x] Version History — `BlueprintSectionVersion`; PATCH snapshots pre-edit content; `GET …/versions` + non-destructive restore; E2E-verified
-- [ ] **Blueprint Dynamic Impact Analysis + Discovery Confidence Meter** ← NEXT
-- [ ] Blueprint Dynamic Impact Analysis (extend PATCH response) + Discovery Confidence Meter
-- [ ] Template entity (7 fixed categories; GET /templates)
-- [ ] Workspace management (create/list/invite/change-role/remove) — P0 once Team ships
+- [x] Blueprint Dynamic Impact Analysis (`POST …/impact-analysis`, on-demand) + Discovery Confidence Meter (AI grade on submit, best-effort, in answer JSONB) — GPT-5 verified
+- [x] Template entity — static in-code catalogue (7 categories); `GET /templates` + `GET /templates/{id}` with prefillDiscoveryHints; E2E-verified
+- [x] Workspace management — `POST/GET /workspaces`, `GET /:id/members`, invite/role/remove; RBAC guards (owner-only owner role, always ≥1 owner); E2E-verified (12 scenarios)
+- [ ] **P2: Notifications / Search / Comments / AI Chat** ← NEXT (Notifications: challenge scope first — may be cut)
 - [ ] Test harness (unit + integration) — biggest DoD gap
-- [ ] Notifications (challenge scope first — may be cut for V1) + Search + Comments + AI Chat (P2)
-- [ ] Subscriptions/billing, audit logs
+- [ ] Subscriptions/billing, audit logs (post-deploy)
 
 ### Docs to keep current with any API change
 - OpenAPI `@openapi` blocks in `*.routes.ts` (the frontend contract, served at /docs)

@@ -226,3 +226,61 @@ blueprintRouter.post(
   '/sections/:sectionKey/versions/:versionId/restore',
   blueprintController.restoreSectionVersion,
 );
+
+/**
+ * @openapi
+ * /api/v1/projects/{projectId}/blueprint/sections/{sectionKey}/impact-analysis:
+ *   post:
+ *     tags: [Blueprint]
+ *     summary: Analyze which other sections an edit may have affected
+ *     description: "Dynamic Impact Analysis — the AI compares this section's current content against the rest of the blueprint and returns the other sections that may now be inconsistent, with a one-line reason each. On-demand (call it after saving a section); not part of the PATCH response, so saves stay fast. An empty list means nothing else looks affected."
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: path
+ *         name: sectionKey
+ *         required: true
+ *         schema: { type: string, example: "business_model" }
+ *     responses:
+ *       200:
+ *         description: Impact analysis result
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 impactAnalysis:
+ *                   type: object
+ *                   properties:
+ *                     affectedSections:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           sectionKey: { type: string, example: "success_metrics" }
+ *                           reason: { type: string, example: "Pricing changed, so the revenue target here no longer matches." }
+ *                     generatedAt: { type: string, format: date-time }
+ *       404:
+ *         description: No blueprint, or unknown section key
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *       502:
+ *         description: AI provider error or unparseable output
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *       503:
+ *         description: AI not configured
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ */
+blueprintRouter.post(
+  '/sections/:sectionKey/impact-analysis',
+  blueprintController.analyzeSectionImpact,
+);
