@@ -439,6 +439,32 @@ Human support threads. Two sides, same data. Delivery is **poll-based** for V1 (
 
 ---
 
+## 19. Notifications — `/api/v1/notifications`
+
+In-app notifications for the logged-in user. **Poll** `GET /notifications` for the bell badge (`unreadCount`). Build the click-through link from each notification's `type` + `data`.
+
+| Method + path | Body / query | Success | Notes |
+|---|---|---|---|
+| `GET /notifications` | `?unread=true`, `?page`, `?limit` | **200** `{ page, limit, total, totalPages, unreadCount, notifications }` | Newest first. `unread=true` filters to unread; `unreadCount` is always the full unread total (for the badge). |
+| `PATCH /notifications/:id/read` | — | **200** `{ notification }` | Mark one read (idempotent). 404 if not yours. |
+| `POST /notifications/read-all` | — | **200** `{ updated }` | Mark all my unread read. |
+| `DELETE /notifications/:id` | — | **204** | 404 if not yours. |
+
+`Notification`: `{ id, type, title, body?, data?, readAt (null = unread), createdAt }`.
+
+**Types and their `data` (what to link to):**
+| `type` | Fires when | `data` |
+|---|---|---|
+| `SUPPORT_REPLY` | staff replies to you (or a user replies in a thread you're assigned) | `{ conversationId }` |
+| `WORKSPACE_INVITE` | you're added to a workspace | `{ workspaceId }` |
+| `COMMENT_REPLY` | someone replies to your comment | `{ projectId, sectionKey, commentId }` |
+| `COMMENT_ADDED` | someone comments on your project's blueprint section | `{ projectId, sectionKey, commentId }` |
+| `RECOMMENDATION_CREATED` | the AI Strategist generates new recommendations for your project | `{ projectId }` |
+
+Notifications are best-effort and never block the action that triggers them; you'll never be notified of your own action.
+
+---
+
 ## Postman — full walkthrough
 
 Setup: `npm run dev` running; environment with `baseUrl = http://localhost:4000`. Postman handles the `fritlow_rt` cookie automatically. After step 1, set every request's Authorization to **Bearer Token** = `{{accessToken}}` (or set it once on a collection and inherit).

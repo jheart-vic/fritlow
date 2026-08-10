@@ -4,6 +4,7 @@ import {
   sendWorkspaceInviteEmail,
   sendWorkspaceSignupInviteEmail,
 } from '../../lib/email/email.service';
+import { notify } from '../notifications/notification.service';
 import type {
   CreateWorkspaceInput,
   InviteMemberInput,
@@ -127,6 +128,15 @@ export async function inviteMember(
     { email: user.email, name: user.fullName },
     { workspaceName, inviterName: inviter?.fullName, role: input.role },
   );
+
+  // In-app heads-up for the invited (existing) user.
+  notify({
+    userId: user.id,
+    type: 'WORKSPACE_INVITE',
+    title: `You were added to ${workspaceName}`,
+    body: inviter?.fullName ? `${inviter.fullName} added you as ${input.role.toLowerCase()}` : undefined,
+    data: { workspaceId },
+  });
 
   return { pending: false as const, member };
 }

@@ -5,6 +5,22 @@
 
 ---
 
+## Session 18 — 2026-08-10
+
+### Done — Phase 4: Notifications (Core 4 + recommendation-created)
+- New `NotificationType` enum (SUPPORT_REPLY, WORKSPACE_INVITE, COMMENT_REPLY, COMMENT_ADDED, RECOMMENDATION_CREATED) + `Notification` model (userId cascade, type, title, body?, `data` JSONB for click-through, readAt?, createdAt; indexes on userId+readAt / userId+createdAt). Migration `20260810043330_add_notifications`. Personal data → cascades on user delete, no sentinel needed.
+- New `src/modules/notifications/` mounted `/api/v1/notifications`: `GET /` (list + `unreadCount`, `?unread=true`, pagination), `PATCH /:id/read` (idempotent), `POST /read-all` (`{updated}`), `DELETE /:id`. All scoped to req.user (others' → 404).
+- **`notify(input)` helper** — fire-and-forget (`void ...catch`, never throws/blocks), the single entry point for triggers. Wired into 5 sites (all skip self-notify): support staff-reply→customer & user-reply→assigned admin (support.service); workspace invite existing-user→invitee (workspace.service); comment reply→parent author, top-level→project creator (comment.service); recommendations generated→project creator when actor≠creator (recommendation.service, covers proactive triggers). Skipped blueprint-ready per decision.
+- Swagger `Notification` schema; frontend-guide new §19 (types→data table). Delivery = polling (same rationale as support; SSE upgrade path later w/ Redis).
+- **E2E-verified:** all 4 deterministic triggers fired with correct type+recipient (invite→U2, comment-added→U1, comment-reply→U2, support-reply→U1); endpoints: unread filter, PATCH read (readAt+unreadCount drop), read-all `{updated}`→unreadCount 0, DELETE 204+total drop, cross-user→404, unknown→404, no-auth→401. (RECOMMENDATION_CREATED not live-run — needs AI; wiring mirrors the others.) Test data cleaned; server stopped; typecheck clean.
+
+### Note (test flakiness, not bugs)
+- Fire-and-forget notify is async → a notification row may not exist the instant after the parent request returns; tests need a tiny settle before asserting. Also the env staff token was captured empty once in a setup script (→ 401s); re-login fixed it. Both are harness issues, code verified correct.
+
+### Status: P2 tier + admin plan nearly complete. Remaining: AI Chat (last P2), test harness (biggest DoD gap), deploy.
+
+---
+
 ## Session 17 — 2026-08-10
 
 ### Reconciled the pending migration (Neon direct endpoint recovered)

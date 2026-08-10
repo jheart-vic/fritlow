@@ -15,6 +15,7 @@ import { decisionRouter } from './modules/decisions/decision.routes';
 import { discoveryRouter } from './modules/discovery/discovery.routes';
 import { exportRouter } from './modules/exports/export.routes';
 import { healthScoreRouter } from './modules/health/health.routes';
+import { notificationRouter } from './modules/notifications/notification.routes';
 import { projectRouter } from './modules/projects/project.routes';
 import { recommendationRouter } from './modules/recommendations/recommendation.routes';
 import { searchRouter } from './modules/search/search.routes';
@@ -78,6 +79,7 @@ app.use(
 );
 app.use('/api/v1/comments', commentRouter);
 app.use('/api/v1/admin', adminRouter);
+app.use('/api/v1/notifications', notificationRouter);
 app.use('/api/v1/support', supportRouter);
 app.use('/api/v1/admin/support', supportAdminRouter);
 

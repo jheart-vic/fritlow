@@ -1,5 +1,6 @@
 import { prisma } from '../../lib/prisma';
 import { ApiError } from '../../utils/api-error';
+import { notify } from '../notifications/notification.service';
 import type {
   ListConversationsQuery,
   PostMessageInput,
@@ -107,7 +108,7 @@ export async function postUserMessage(
   conversationId: string,
   input: PostMessageInput,
 ) {
-  await getOwnedConversation(userId, conversationId);
+  const conversation = await getOwnedConversation(userId, conversationId);
   const now = new Date();
   const message = await prisma.supportMessage.create({
     data: { conversationId, body: input.body, senderType: 'USER', senderId: userId },
@@ -118,6 +119,16 @@ export async function postUserMessage(
     where: { id: conversationId },
     data: { lastMessageAt: now, userLastReadAt: now, status: 'OPEN' },
   });
+  // Notify the staff member who owns the thread, if one has claimed it.
+  if (conversation.assignedAdminId && conversation.assignedAdminId !== userId) {
+    notify({
+      userId: conversation.assignedAdminId,
+      type: 'SUPPORT_REPLY',
+      title: 'New reply in a support conversation',
+      body: input.body.slice(0, 120),
+      data: { conversationId },
+    });
+  }
   return message;
 }
 
@@ -183,6 +194,14 @@ export async function postStaffMessage(
       // First staff reply claims the thread if nobody has yet.
       ...(existing.assignedAdminId ? {} : { assignedAdminId: adminId }),
     },
+  });
+  // Let the customer know support responded.
+  notify({
+    userId: existing.customerId,
+    type: 'SUPPORT_REPLY',
+    title: 'Support replied to your conversation',
+    body: input.body.slice(0, 120),
+    data: { conversationId },
   });
   return message;
 }
