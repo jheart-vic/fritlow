@@ -187,6 +187,34 @@ export const swaggerSpec = swaggerJsdoc({
             },
           },
         },
+        Notification: {
+          type: 'object',
+          description:
+            'An in-app notification. Use `type` + `data` to build the click-through link. `readAt` null = unread.',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            type: {
+              type: 'string',
+              enum: [
+                'SUPPORT_REPLY',
+                'WORKSPACE_INVITE',
+                'COMMENT_REPLY',
+                'COMMENT_ADDED',
+                'RECOMMENDATION_CREATED',
+              ],
+            },
+            title: { type: 'string' },
+            body: { type: 'string', nullable: true },
+            data: {
+              type: 'object',
+              nullable: true,
+              description: 'Navigation context, e.g. { conversationId } or { projectId, sectionKey, commentId }',
+              additionalProperties: true,
+            },
+            readAt: { type: 'string', format: 'date-time', nullable: true },
+            createdAt: { type: 'string', format: 'date-time' },
+          },
+        },
         SupportMessage: {
           type: 'object',
           properties: {

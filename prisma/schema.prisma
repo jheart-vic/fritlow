@@ -38,6 +38,16 @@ enum InvitationStatus {
   REVOKED
 }
 
+// What an in-app notification is about — drives its icon and how the frontend
+// builds the click-through link from the `data` payload.
+enum NotificationType {
+  SUPPORT_REPLY
+  WORKSPACE_INVITE
+  COMMENT_REPLY
+  COMMENT_ADDED
+  RECOMMENDATION_CREATED
+}
+
 // Support conversation lifecycle (Fritlow staff ↔ a user).
 enum SupportStatus {
   OPEN
@@ -85,6 +95,7 @@ model User {
   supportConversations SupportConversation[] @relation("SupportCustomer")
   assignedSupport      SupportConversation[] @relation("SupportAssignee")
   supportMessages      SupportMessage[]      @relation("SupportSender")
+  notifications        Notification[]
 }
 
 // Tenancy root: every project will live inside a workspace.
@@ -303,6 +314,25 @@ enum DecisionStatus {
   ACTIVE
   REVISED
   REVERSED
+}
+
+// An in-app notification for one user. Personal (not shared content), so it just
+// cascades away when the user is deleted. `data` is a small JSON blob the
+// frontend uses to build the click-through route (no hardcoded URLs server-side).
+model Notification {
+  id        String           @id @default(uuid())
+  type      NotificationType
+  title     String
+  body      String?
+  data      Json?
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
 }
 
 // The Decision Log: every major product decision as a first-class object,

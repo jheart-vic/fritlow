@@ -1,6 +1,7 @@
 import { prisma } from '../../lib/prisma';
 import * as aiService from '../../lib/ai/ai.service';
 import { ApiError } from '../../utils/api-error';
+import { notify } from '../notifications/notification.service';
 import { getProject } from '../projects/project.service';
 import type { ListRecommendationsQuery, UpdateRecommendationInput } from './recommendation.schemas';
 
@@ -152,6 +153,22 @@ async function runGeneration(userId: string, projectId: string) {
     ],
     { maxWait: 15000, timeout: 15000 },
   );
+
+  // Tell the project's creator the Strategist has fresh insights — most useful
+  // when a proactive trigger (not the creator themselves) generated them.
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { createdById: true, name: true },
+  });
+  if (project && project.createdById !== userId) {
+    notify({
+      userId: project.createdById,
+      type: 'RECOMMENDATION_CREATED',
+      title: `New recommendations for ${project.name}`,
+      body: `${rows.length} new insight(s) from the AI Strategist`,
+      data: { projectId },
+    });
+  }
 
   return listRecommendations(userId, projectId, {});
 }

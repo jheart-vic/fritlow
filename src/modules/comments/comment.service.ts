@@ -1,5 +1,6 @@
 import { prisma } from '../../lib/prisma';
 import { ApiError } from '../../utils/api-error';
+import { notify } from '../notifications/notification.service';
 import { getProject } from '../projects/project.service';
 import type { CreateCommentInput } from './comment.schemas';
 
@@ -44,19 +45,21 @@ export async function createComment(
   sectionKey: string,
   input: CreateCommentInput,
 ) {
-  await getProject(userId, projectId); // membership gate + 404
+  const project = await getProject(userId, projectId); // membership gate + 404
   const section = await getSection(projectId, sectionKey);
 
   // A reply must point at a comment on the SAME section — you can't graft a
   // thread across sections/projects.
+  let parentAuthorId: string | null = null;
   if (input.parentId) {
     const parent = await prisma.comment.findUnique({ where: { id: input.parentId } });
     if (!parent || parent.blueprintSectionId !== section.id) {
       throw ApiError.notFound('Parent comment not found on this section');
     }
+    parentAuthorId = parent.authorId;
   }
 
-  return prisma.comment.create({
+  const comment = await prisma.comment.create({
     data: {
       body: input.body,
       projectId,
@@ -76,6 +79,17 @@ export async function createComment(
       ...authorSelect,
     },
   });
+
+  // Notify the right person (never yourself): a reply pings the parent's author;
+  // a top-level comment pings the project's creator.
+  const data = { projectId, sectionKey, commentId: comment.id };
+  if (parentAuthorId && parentAuthorId !== userId) {
+    notify({ userId: parentAuthorId, type: 'COMMENT_REPLY', title: 'New reply to your comment', body: input.body.slice(0, 120), data });
+  } else if (!input.parentId && project.createdById !== userId) {
+    notify({ userId: project.createdById, type: 'COMMENT_ADDED', title: `New comment on ${project.name}`, body: input.body.slice(0, 120), data });
+  }
+
+  return comment;
 }
 
 export async function listComments(
