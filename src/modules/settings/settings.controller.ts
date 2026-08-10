@@ -14,6 +14,11 @@ export async function changePassword(req: Request, res: Response) {
   res.status(200).json({ message: 'Password updated. Please log in again.' });
 }
 
+export async function deleteAccount(req: Request, res: Response) {
+  await settingsService.deleteAccount(req.user!.id, req.body);
+  res.status(204).send();
+}
+
 export async function renameWorkspace(req: Request, res: Response) {
   const workspace = await settingsService.renameWorkspace(
     req.user!.id,

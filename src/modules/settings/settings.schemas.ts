@@ -20,6 +20,13 @@ export const renameWorkspaceSchema = z.object({
   name: z.string().trim().min(2, 'Workspace name must be at least 2 characters').max(100),
 });
 
+// Deleting your own account is irreversible, so we re-authenticate with the
+// password (an access token alone must not be enough to erase an account).
+export const deleteAccountSchema = z.object({
+  password: z.string().min(1, 'Password is required to delete your account'),
+});
+
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type RenameWorkspaceInput = z.infer<typeof renameWorkspaceSchema>;
+export type DeleteAccountInput = z.infer<typeof deleteAccountSchema>;

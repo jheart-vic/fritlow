@@ -6,8 +6,10 @@ import swaggerUi from 'swagger-ui-express';
 import { env } from './config/env';
 import { swaggerSpec } from './config/swagger';
 import { errorHandler, notFoundHandler } from './middleware/error-handler';
+import { adminRouter } from './modules/admin/admin.routes';
 import { authRouter } from './modules/auth/auth.routes';
 import { blueprintRouter } from './modules/blueprints/blueprint.routes';
+import { commentRouter, commentSectionRouter } from './modules/comments/comment.routes';
 import { dashboardRouter } from './modules/dashboard/dashboard.routes';
 import { decisionRouter } from './modules/decisions/decision.routes';
 import { discoveryRouter } from './modules/discovery/discovery.routes';
@@ -15,7 +17,9 @@ import { exportRouter } from './modules/exports/export.routes';
 import { healthScoreRouter } from './modules/health/health.routes';
 import { projectRouter } from './modules/projects/project.routes';
 import { recommendationRouter } from './modules/recommendations/recommendation.routes';
+import { searchRouter } from './modules/search/search.routes';
 import { settingsRouter } from './modules/settings/settings.routes';
+import { supportAdminRouter, supportRouter } from './modules/support/support.routes';
 import { templateRouter } from './modules/templates/templates.routes';
 import { workspaceRouter } from './modules/workspaces/workspace.routes';
 
@@ -66,6 +70,16 @@ app.use('/api/v1/dashboard', dashboardRouter);
 app.use('/api/v1/settings', settingsRouter);
 app.use('/api/v1/templates', templateRouter);
 app.use('/api/v1/workspaces', workspaceRouter);
+app.use('/api/v1/search', searchRouter);
+// Comments: create/list are section-scoped; delete is flat (per the build spec).
+app.use(
+  '/api/v1/projects/:projectId/blueprint/sections/:sectionKey/comments',
+  commentSectionRouter,
+);
+app.use('/api/v1/comments', commentRouter);
+app.use('/api/v1/admin', adminRouter);
+app.use('/api/v1/support', supportRouter);
+app.use('/api/v1/admin/support', supportAdminRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

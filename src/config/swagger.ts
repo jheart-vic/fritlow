@@ -87,6 +87,224 @@ export const swaggerSpec = swaggerJsdoc({
             },
           },
         },
+        AdminStats: {
+          type: 'object',
+          description: 'Platform-wide aggregate metrics (Fritlow staff view).',
+          properties: {
+            users: {
+              type: 'object',
+              properties: {
+                total: { type: 'integer' },
+                verified: { type: 'integer' },
+                newLast7Days: { type: 'integer' },
+                newLast30Days: { type: 'integer' },
+              },
+            },
+            workspaces: { type: 'object', properties: { total: { type: 'integer' } } },
+            projects: {
+              type: 'object',
+              properties: {
+                total: { type: 'integer' },
+                byStatus: {
+                  type: 'object',
+                  properties: {
+                    DRAFT: { type: 'integer' },
+                    DISCOVERY: { type: 'integer' },
+                    BLUEPRINT_COMPLETE: { type: 'integer' },
+                    LAUNCHED: { type: 'integer' },
+                  },
+                },
+                activeLast7Days: { type: 'integer' },
+              },
+            },
+            discovery: {
+              type: 'object',
+              properties: {
+                sessions: { type: 'integer' },
+                completed: { type: 'integer' },
+                completionRate: { type: 'integer', description: 'Percent 0-100' },
+              },
+            },
+            blueprints: { type: 'object', properties: { generated: { type: 'integer' } } },
+            recommendations: { type: 'object', properties: { total: { type: 'integer' } } },
+            exports: { type: 'object', properties: { total: { type: 'integer' } } },
+            generatedAt: { type: 'string', format: 'date-time' },
+          },
+        },
+        AdminUserSummary: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            email: { type: 'string', format: 'email' },
+            fullName: { type: 'string' },
+            emailVerified: { type: 'boolean' },
+            platformRole: { type: 'string', enum: ['USER', 'SUPPORT', 'SUPERADMIN'] },
+            createdAt: { type: 'string', format: 'date-time' },
+            projectCount: { type: 'integer' },
+            workspaceCount: { type: 'integer' },
+          },
+        },
+        AdminUserDetail: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            email: { type: 'string', format: 'email' },
+            fullName: { type: 'string' },
+            emailVerified: { type: 'boolean' },
+            platformRole: { type: 'string', enum: ['USER', 'SUPPORT', 'SUPERADMIN'] },
+            createdAt: { type: 'string', format: 'date-time' },
+            workspaces: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string', format: 'uuid' },
+                  name: { type: 'string' },
+                  role: { type: 'string', enum: ['OWNER', 'ADMIN', 'MEMBER'] },
+                  joinedAt: { type: 'string', format: 'date-time' },
+                },
+              },
+            },
+            projects: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string', format: 'uuid' },
+                  name: { type: 'string' },
+                  status: { type: 'string' },
+                  workspaceId: { type: 'string', format: 'uuid' },
+                  updatedAt: { type: 'string', format: 'date-time' },
+                },
+              },
+            },
+            activity: {
+              type: 'object',
+              properties: {
+                projectCount: { type: 'integer' },
+                lastProjectActivityAt: { type: 'string', format: 'date-time', nullable: true },
+              },
+            },
+          },
+        },
+        SupportMessage: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            body: { type: 'string' },
+            senderType: { type: 'string', enum: ['USER', 'STAFF'] },
+            senderId: { type: 'string', format: 'uuid' },
+            sender: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                fullName: { type: 'string' },
+              },
+            },
+            createdAt: { type: 'string', format: 'date-time' },
+          },
+        },
+        SupportConversation: {
+          type: 'object',
+          description:
+            'A support thread. `hasUnread` is computed for the requesting side (user vs staff). `customer` appears only on staff responses.',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            subject: { type: 'string', nullable: true },
+            status: { type: 'string', enum: ['OPEN', 'CLOSED'] },
+            lastMessageAt: { type: 'string', format: 'date-time' },
+            createdAt: { type: 'string', format: 'date-time' },
+            updatedAt: { type: 'string', format: 'date-time' },
+            assignedAdminId: { type: 'string', format: 'uuid', nullable: true },
+            hasUnread: { type: 'boolean' },
+            customer: {
+              type: 'object',
+              nullable: true,
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                fullName: { type: 'string' },
+                email: { type: 'string', format: 'email' },
+              },
+            },
+          },
+        },
+        SupportConversationDetail: {
+          allOf: [
+            { $ref: '#/components/schemas/SupportConversation' },
+            {
+              type: 'object',
+              properties: {
+                messages: { type: 'array', items: { $ref: '#/components/schemas/SupportMessage' } },
+              },
+            },
+          ],
+        },
+        Comment: {
+          type: 'object',
+          description: 'A comment on a blueprint section. `replies` holds nested thread replies.',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            body: { type: 'string' },
+            projectId: { type: 'string', format: 'uuid' },
+            sectionKey: { type: 'string', example: 'business_model' },
+            parentId: {
+              type: 'string',
+              format: 'uuid',
+              nullable: true,
+              description: 'The comment this one replies to; null for a top-level comment',
+            },
+            author: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                fullName: { type: 'string' },
+              },
+            },
+            createdAt: { type: 'string', format: 'date-time' },
+            updatedAt: { type: 'string', format: 'date-time' },
+            replies: {
+              type: 'array',
+              description: 'Nested replies (present on list responses; empty for a fresh comment)',
+              items: { $ref: '#/components/schemas/Comment' },
+            },
+          },
+        },
+        SearchResult: {
+          type: 'object',
+          description: 'One search hit. `type` tells the UI how to render/route it.',
+          properties: {
+            type: {
+              type: 'string',
+              enum: ['project', 'blueprint_section', 'decision', 'recommendation'],
+            },
+            id: { type: 'string', format: 'uuid' },
+            title: { type: 'string' },
+            snippet: { type: 'string', description: 'Text window around the match' },
+            projectId: { type: 'string', format: 'uuid' },
+            projectName: { type: 'string' },
+            sectionKey: {
+              type: 'string',
+              description: 'Only on blueprint_section results — for deep-linking',
+            },
+          },
+        },
+        SearchResults: {
+          type: 'object',
+          properties: {
+            query: { type: 'string' },
+            counts: {
+              type: 'object',
+              properties: {
+                project: { type: 'integer' },
+                blueprint_section: { type: 'integer' },
+                decision: { type: 'integer' },
+                recommendation: { type: 'integer' },
+                total: { type: 'integer' },
+              },
+            },
+            results: { type: 'array', items: { $ref: '#/components/schemas/SearchResult' } },
+          },
+        },
         WorkspaceInvitation: {
           type: 'object',
           description:
