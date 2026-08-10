@@ -132,6 +132,9 @@ export async function deleteAccount(userId: string, input: DeleteAccountInput): 
       // reassign them. (Their own customer threads cascade via customerId; the
       // assignedAdmin FK is SetNull, so no action needed there.)
       await tx.supportMessage.updateMany({ where: { senderId: userId }, data: { senderId: sentinelId } });
+      // Group-chat messages stay in shared channels — reassign to the sentinel.
+      // (Channel read cursors cascade; channel createdBy is SetNull.)
+      await tx.groupMessage.updateMany({ where: { senderId: userId }, data: { senderId: sentinelId } });
 
       // 3. Delete the user — memberships and all token tables cascade.
       await tx.user.delete({ where: { id: userId } });

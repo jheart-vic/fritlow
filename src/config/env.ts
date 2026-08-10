@@ -62,6 +62,10 @@ const envSchema = z.object({
   ADMIN_EMAIL: z.email().optional(),
   ADMIN_PASSWORD: z.string().min(8, 'ADMIN_PASSWORD must be at least 8 characters').optional(),
   ADMIN_NAME: z.string().default('Fritlow Admin'),
+  // Optional. When set, Socket.io uses the Redis adapter so real-time group-chat
+  // broadcasts reach clients across multiple server instances. Unset = single
+  // instance / in-memory (fine for dev).
+  REDIS_URL: z.string().optional(),
   // How many proxy hops sit in front of the API (Render/Nginx = 1). Tells
   // Express to trust that many X-Forwarded-For entries so req.ip is the real
   // client, not the proxy — otherwise every request shares one bucket.

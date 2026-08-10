@@ -187,6 +187,34 @@ export const swaggerSpec = swaggerJsdoc({
             },
           },
         },
+        GroupChannel: {
+          type: 'object',
+          description: 'A workspace team-chat channel. `hasUnread` is per requesting member.',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            name: { type: 'string' },
+            description: { type: 'string', nullable: true },
+            workspaceId: { type: 'string', format: 'uuid' },
+            createdById: { type: 'string', format: 'uuid', nullable: true },
+            lastMessageAt: { type: 'string', format: 'date-time' },
+            createdAt: { type: 'string', format: 'date-time' },
+            hasUnread: { type: 'boolean' },
+          },
+        },
+        GroupMessage: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            body: { type: 'string' },
+            channelId: { type: 'string', format: 'uuid' },
+            senderId: { type: 'string', format: 'uuid' },
+            sender: {
+              type: 'object',
+              properties: { id: { type: 'string', format: 'uuid' }, fullName: { type: 'string' } },
+            },
+            createdAt: { type: 'string', format: 'date-time' },
+          },
+        },
         ChatMessage: {
           type: 'object',
           properties: {

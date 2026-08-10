@@ -1,9 +1,20 @@
+import { createServer } from 'node:http';
 import { app } from './app';
 import { env } from './config/env';
 import { prisma } from './lib/prisma';
 import { seedPlatformAdmin } from './modules/admin/admin.seed';
+import { initIO } from './realtime/io';
 
-const server = app.listen(env.PORT, () => {
+// Wrap Express in an http.Server so Socket.io can share the same port.
+const server = createServer(app);
+
+// Attach the real-time layer (group chat). Async because the Redis adapter
+// (when REDIS_URL is set) is imported + connected on the way up.
+void initIO(server).then(() => console.log('💬 Socket.io ready')).catch((err) =>
+  console.error('[socket] init failed:', err),
+);
+
+server.listen(env.PORT, () => {
   console.log(`🚀 Fritlow API running at http://localhost:${env.PORT}`);
   console.log(`📚 API docs at http://localhost:${env.PORT}/docs`);
   // Ensure the platform admin exists (from env). Fire-and-forget + idempotent —

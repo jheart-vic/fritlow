@@ -62,8 +62,9 @@ Note on **Notifications** (P2 above) — still CHALLENGE BEFORE BUILDING: dashbo
 - [x] **Admin foundation (Phase 2)** — `platformRole` USER/SUPPORT/**SUPERADMIN** (renamed from ADMIN so it never collides with WorkspaceRole) + `requirePlatformRole` (DB-read, instant revoke) + `/admin/stats|users|users/:id`. **Admin is env-seeded (`ADMIN_EMAIL`/`ADMIN_PASSWORD`), never registers** — logs in via normal `/auth/login`; `scripts/make-admin.ts` adds SUPPORT staff. E2E-verified. ⚠️ migration `add_platform_role` applied via pooled DDL — needs `migrate resolve --applied` when Neon direct endpoint recovers (see session.md S16).
 - [x] **Support chat (Phase 3)** — `SupportConversation`/`SupportMessage`; user `/support/*` + staff `/admin/support/*`; unread via lastReadAt timestamps, staff-claim, reopen-on-user-reply; account-deletion reassigns staff msgs to sentinel; E2E-verified. (migration `add_support_chat`; platformRole migration reconciled via `migrate resolve`.)
 - [x] **Notifications (Phase 4)** — `Notification` model; `GET /notifications` (+unreadCount, unread filter), `PATCH /:id/read`, `POST /read-all`, `DELETE /:id`; `notify()` fire-and-forget wired to 5 triggers (support reply both ways, workspace invite, comment reply, comment-added, recommendation-created); polling delivery; E2E-verified.
-- [ ] **P2: AI Chat** (SSE, spec item 11) — after the admin/support work
-- [ ] Test harness (unit + integration) — biggest DoD gap
+- [x] **P2: AI Chat** — SSE, personal per-project copilot; `POST /projects/:id/chat` (+conversations CRUD); GPT-5-verified.
+- [x] **Group Chat (Socket.io)** — workspace named channels, real-time `message:new` broadcast, JWT socket auth, per-member unread, @mention notifications; Redis adapter guarded by `REDIS_URL` (in-memory fallback, crash-safe). E2E-verified. **New stack: socket.io + ioredis.**
+- [ ] **Test harness (unit + integration)** ← NEXT — biggest DoD gap
 - [ ] Subscriptions/billing, audit logs (post-deploy)
 
 ### Docs to keep current with any API change

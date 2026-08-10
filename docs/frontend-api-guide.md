@@ -454,6 +454,39 @@ A per-project AI assistant ("founder copilot") that answers using the project's 
 
 ---
 
+## 19b. Group chat — `/api/v1/workspaces/:workspaceId/channels` + Socket.io
+
+Workspace team chat: Slack-style named channels, all workspace members can see all channels. **History + unread are REST; live delivery is Socket.io.** The write path is REST (`POST …/messages`); the server persists, then broadcasts `message:new` over the socket to everyone in that channel's room. A default **`general`** channel is created with each workspace.
+
+**REST (Bearer required, must be a workspace member):**
+| Method + path | Body / query | Result |
+|---|---|---|
+| `POST /channels` | `{ name, description? }` | **201** `{ channel }` |
+| `GET /channels` | — | **200** `{ channels }` (each with `hasUnread`) |
+| `PATCH /channels/:channelId` | `{ name?, description? }` | **200** `{ channel }` (creator or workspace OWNER/ADMIN) |
+| `DELETE /channels/:channelId` | — | **204** (creator or OWNER/ADMIN) |
+| `GET /channels/:channelId/messages` | `?before=<ISO>&limit=` | **200** `{ messages }` (oldest→newest; marks read) |
+| `POST /channels/:channelId/messages` | `{ body, mentions?: userId[] }` | **201** `{ message }` (broadcasts + notifies mentions) |
+| `POST /channels/:channelId/read` | — | **204** (clear unread badge) |
+
+**Socket.io (real-time):** connect to the same origin, passing the access token in the handshake:
+```js
+import { io } from 'socket.io-client';
+const socket = io(API_ORIGIN, { auth: { token: accessToken } });
+
+// Join a channel you have open (server checks workspace membership; ack = allowed)
+socket.emit('channel:join', channelId, (ok) => { /* ok===false → not allowed */ });
+
+socket.on('message:new', (msg) => appendMessage(msg));       // { id, body, channelId, senderId, sender:{id,fullName}, createdAt }
+socket.on('channel:typing', ({ channelId, userId }) => showTyping(userId));
+
+socket.emit('channel:typing', channelId);   // tell others you're typing
+socket.emit('channel:leave', channelId);    // when you close the channel
+```
+Flow: **post via REST**, **receive via `message:new`**. Poll `GET /channels` (or listen while joined) for unread. Bad/missing token → the socket connection is rejected. `@mentions` in a message also produce a `GROUP_MENTION` in-app notification (see §19).
+
+---
+
 ## 19. Notifications — `/api/v1/notifications`
 
 In-app notifications for the logged-in user. **Poll** `GET /notifications` for the bell badge (`unreadCount`). Build the click-through link from each notification's `type` + `data`.
