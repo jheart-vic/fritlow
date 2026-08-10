@@ -38,6 +38,12 @@ enum InvitationStatus {
   REVOKED
 }
 
+// Who authored a chat message in the project AI assistant.
+enum ChatRole {
+  USER
+  ASSISTANT
+}
+
 // What an in-app notification is about — drives its icon and how the frontend
 // builds the click-through link from the `data` payload.
 enum NotificationType {
@@ -96,6 +102,7 @@ model User {
   assignedSupport      SupportConversation[] @relation("SupportAssignee")
   supportMessages      SupportMessage[]      @relation("SupportSender")
   notifications        Notification[]
+  chatConversations    ChatConversation[]
 }
 
 // Tenancy root: every project will live inside a workspace.
@@ -316,6 +323,38 @@ enum DecisionStatus {
   REVERSED
 }
 
+// Project AI assistant ("founder copilot"). Conversations are PERSONAL — scoped
+// to the project AND their creator — so they cascade away cleanly if either the
+// project or the user is deleted (no sentinel needed).
+model ChatConversation {
+  id            String   @id @default(uuid())
+  title         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  lastMessageAt DateTime @default(now())
+
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId   String
+  createdBy   User    @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdById String
+
+  messages ChatMessage[]
+
+  @@index([projectId, createdById])
+}
+
+model ChatMessage {
+  id             String   @id @default(uuid())
+  role           ChatRole
+  content        String
+  createdAt      DateTime @default(now())
+
+  conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId String
+
+  @@index([conversationId])
+}
+
 // An in-app notification for one user. Personal (not shared content), so it just
 // cascades away when the user is deleted. `data` is a small JSON blob the
 // frontend uses to build the click-through route (no hardcoded URLs server-side).
@@ -461,6 +500,7 @@ model Project {
   healthScore            HealthScore?
   blueprintSectionVersions BlueprintSectionVersion[]
   comments               Comment[]
+  chatConversations      ChatConversation[]
 
   @@index([workspaceId])
 }

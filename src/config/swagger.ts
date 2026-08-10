@@ -187,6 +187,27 @@ export const swaggerSpec = swaggerJsdoc({
             },
           },
         },
+        ChatMessage: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            role: { type: 'string', enum: ['USER', 'ASSISTANT'] },
+            content: { type: 'string' },
+            conversationId: { type: 'string', format: 'uuid' },
+            createdAt: { type: 'string', format: 'date-time' },
+          },
+        },
+        ChatConversation: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            title: { type: 'string', nullable: true },
+            lastMessageAt: { type: 'string', format: 'date-time' },
+            createdAt: { type: 'string', format: 'date-time' },
+            updatedAt: { type: 'string', format: 'date-time' },
+            messages: { type: 'array', items: { $ref: '#/components/schemas/ChatMessage' } },
+          },
+        },
         Notification: {
           type: 'object',
           description:
