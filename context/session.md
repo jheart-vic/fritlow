@@ -5,6 +5,32 @@
 
 ---
 
+## Session 19 — 2026-08-10
+
+### Done — AI Chat (SSE) + Group Chat (Socket.io) — the last P2 + a new real-time feature
+**AI Chat** (`src/modules/chat/`, migration `add_ai_chat`): personal per-project "founder copilot". Models `ChatConversation` (projectId + createdById, both Cascade → no sentinel needed) + `ChatMessage` (role USER/ASSISTANT). Endpoints under `/api/v1/projects/:projectId/chat`: `POST /` (**SSE** stream — delta*→done{conversationId,userMessage,assistantMessage}|error; reuses `generateTextStream` + blueprint SSE pattern; creates conversation when `conversationId` omitted, seeds title from first msg, feeds last 15 turns + project context), `GET /conversations`, `GET /conversations/:id`, `DELETE /conversations/:id`. **Live GPT-5-verified**: streamed a sharp context-aware answer; multi-turn context retained (4-msg thread); delete→404. Swagger + frontend-guide §19a.
+
+**Group Chat** (`src/modules/group-chat/`, migration `add_group_chat`): workspace-scoped, Slack-style **named channels**, **Socket.io** real-time. Models `GroupChannel` (workspaceId, createdById SetNull, lastMessageAt) + `GroupMessage` (senderId) + `GroupChannelRead` (per-member last-read → unread). REST under `/api/v1/workspaces/:id/channels`: create/list(+hasUnread)/patch/delete (creator or OWNER/ADMIN for patch/delete), `GET|POST :cid/messages`, `POST :cid/read`. **Write path = REST**, then `emitToChannel()` broadcasts `message:new` over the socket. `@mentions` → `GROUP_MENTION` notification. A **"general" channel is auto-created** in `createWorkspace`. Swagger + frontend-guide §19b.
+
+**Socket.io infra** (`src/realtime/io.ts`, `server.ts` now wraps Express in `http.Server`): JWT handshake auth (same access token via `handshake.auth.token`), rooms per channel (`channel:join`/`leave` with workspace-membership check, always-acks), `channel:typing` relay, `emitToChannel()` helper. **Redis adapter guarded by `REDIS_URL`** for multi-instance fan-out — but **only used for the Socket.io adapter** (no cache/sessions/queue on Redis). Single instance needs no Redis (in-memory adapter).
+
+### ⚠️ Robustness fix (important)
+- An unreachable `REDIS_URL` was **crashing the whole process** (ioredis unhandled 'error' + MaxRetries). Fixed in io.ts: `lazyConnect` + `connectTimeout` + `retryStrategy:()=>null` + `enableOfflineQueue:false` + `.on('error')` handlers + `await connect()` in try/catch → **falls back to in-memory adapter, never crashes**. (User's `.env` `REDIS_URL` is a Render-INTERNAL host, unreachable from local dev — server now boots fine anyway.)
+
+### Account deletion + deps
+- `deleteAccount` now also reassigns `GroupMessage.senderId` → sentinel (own customer/group data cascades; channel createdBy SetNull; reads cascade).
+- New deps: `socket.io`, `@socket.io/redis-adapter`, `ioredis` (+ `socket.io-client` devDep for tests). New env `REDIS_URL` (optional) + `.env.example`.
+
+### Redis usage decision (answered for user)
+- Redis is used **only** for the Socket.io cross-instance broadcast adapter — NOT cache/sessions/queue. Durable chat history is in Postgres. So Render **free tier (no persistence, 25MB, 50 conns) is fine for prod** for this use: pub/sub is ephemeral, tiny memory, and connections are ~2 per *instance* (not per user). Upgrade only when adding BullMQ/queues (needs durability) or a Redis rate-limit store at scale.
+
+### E2E verified
+- AI chat: live SSE stream, multi-turn, CRUD, 404s. Group chat: auto general channel, non-member create→403, member→201; **socket** bad-token→rejected, join ack true, **A posts (REST) → B receives `message:new` live**, @mention→GROUP_MENTION notif. Test data cleaned; server stopped; typecheck clean.
+
+### Status: ALL P2 + admin plan features DONE. Remaining for V1: **test harness** (biggest DoD gap) + **deploy**. Branch has Sessions 10–19 uncommitted (last commit was through S18-ish per user); 9 migrations total.
+
+---
+
 ## Session 18 — 2026-08-10
 
 ### Done — Phase 4: Notifications (Core 4 + recommendation-created)

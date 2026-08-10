@@ -9,11 +9,13 @@ import { errorHandler, notFoundHandler } from './middleware/error-handler';
 import { adminRouter } from './modules/admin/admin.routes';
 import { authRouter } from './modules/auth/auth.routes';
 import { blueprintRouter } from './modules/blueprints/blueprint.routes';
+import { chatRouter } from './modules/chat/chat.routes';
 import { commentRouter, commentSectionRouter } from './modules/comments/comment.routes';
 import { dashboardRouter } from './modules/dashboard/dashboard.routes';
 import { decisionRouter } from './modules/decisions/decision.routes';
 import { discoveryRouter } from './modules/discovery/discovery.routes';
 import { exportRouter } from './modules/exports/export.routes';
+import { groupChatRouter } from './modules/group-chat/group-chat.routes';
 import { healthScoreRouter } from './modules/health/health.routes';
 import { notificationRouter } from './modules/notifications/notification.routes';
 import { projectRouter } from './modules/projects/project.routes';
@@ -65,12 +67,14 @@ app.use('/api/v1/projects/:projectId/discovery', discoveryRouter);
 app.use('/api/v1/projects/:projectId/blueprint', blueprintRouter);
 app.use('/api/v1/projects/:projectId/decisions', decisionRouter);
 app.use('/api/v1/projects/:projectId/recommendations', recommendationRouter);
+app.use('/api/v1/projects/:projectId/chat', chatRouter);
 app.use('/api/v1/projects/:projectId/export', exportRouter);
 app.use('/api/v1/projects/:projectId/health-score', healthScoreRouter);
 app.use('/api/v1/dashboard', dashboardRouter);
 app.use('/api/v1/settings', settingsRouter);
 app.use('/api/v1/templates', templateRouter);
 app.use('/api/v1/workspaces', workspaceRouter);
+app.use('/api/v1/workspaces/:workspaceId/channels', groupChatRouter);
 app.use('/api/v1/search', searchRouter);
 // Comments: create/list are section-scoped; delete is flat (per the build spec).
 app.use(

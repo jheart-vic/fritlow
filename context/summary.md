@@ -49,7 +49,8 @@ Design north star: every screen answers "What should I do next?" within ~3 secon
 | Backend | **PEN: PostgreSQL + Express + Node (TypeScript)** — chosen over NestJS 2026-07-16 because the maintainer knows Express. Discipline via feature modules + service layer + zod validation. |
 | Database | **PostgreSQL + Prisma** with JSONB for document-shaped content — **confirmed 2026-07-16** |
 | AI layer | Thin provider abstraction via **LiteLLM** or Vercel AI SDK provider layer; SSE for streaming |
-| Cache/Queues | Redis + BullMQ |
+| Real-time | **Socket.io** (added 2026-08-10) for group chat — JWT-handshake auth, channel rooms, `message:new` broadcast. Multi-instance fan-out via the **Redis adapter** (guarded by `REDIS_URL`; in-memory fallback for single instance, crash-safe if Redis is down). SSE still used for AI/blueprint streaming (one-way). |
+| Cache/Queues | Redis + BullMQ (BullMQ still deferred). **Redis is currently used ONLY as the Socket.io broadcast adapter** — not cache/sessions/queue — so its data is ephemeral and Render's free/no-persistence tier is fine until BullMQ or a Redis rate-limit store is added. |
 | Storage | DigitalOcean Spaces (S3-compatible) for exports |
 | Auth | Self-hosted JWT + refresh (managed layer like Better Auth/Clerk worth a cost/benefit check) |
 | Deployment | Vercel (Nuxt frontend) + DigitalOcean (this Express API) |

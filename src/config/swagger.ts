@@ -187,6 +187,55 @@ export const swaggerSpec = swaggerJsdoc({
             },
           },
         },
+        GroupChannel: {
+          type: 'object',
+          description: 'A workspace team-chat channel. `hasUnread` is per requesting member.',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            name: { type: 'string' },
+            description: { type: 'string', nullable: true },
+            workspaceId: { type: 'string', format: 'uuid' },
+            createdById: { type: 'string', format: 'uuid', nullable: true },
+            lastMessageAt: { type: 'string', format: 'date-time' },
+            createdAt: { type: 'string', format: 'date-time' },
+            hasUnread: { type: 'boolean' },
+          },
+        },
+        GroupMessage: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            body: { type: 'string' },
+            channelId: { type: 'string', format: 'uuid' },
+            senderId: { type: 'string', format: 'uuid' },
+            sender: {
+              type: 'object',
+              properties: { id: { type: 'string', format: 'uuid' }, fullName: { type: 'string' } },
+            },
+            createdAt: { type: 'string', format: 'date-time' },
+          },
+        },
+        ChatMessage: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            role: { type: 'string', enum: ['USER', 'ASSISTANT'] },
+            content: { type: 'string' },
+            conversationId: { type: 'string', format: 'uuid' },
+            createdAt: { type: 'string', format: 'date-time' },
+          },
+        },
+        ChatConversation: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            title: { type: 'string', nullable: true },
+            lastMessageAt: { type: 'string', format: 'date-time' },
+            createdAt: { type: 'string', format: 'date-time' },
+            updatedAt: { type: 'string', format: 'date-time' },
+            messages: { type: 'array', items: { $ref: '#/components/schemas/ChatMessage' } },
+          },
+        },
         Notification: {
           type: 'object',
           description:

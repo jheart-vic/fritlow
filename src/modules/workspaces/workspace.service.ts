@@ -45,11 +45,20 @@ async function ownerCount(workspaceId: string): Promise<number> {
 }
 
 export async function createWorkspace(userId: string, input: CreateWorkspaceInput) {
-  // Workspace + its first membership (the creator as OWNER) in one transaction.
+  // Workspace + its first membership (the creator as OWNER) + a default
+  // "general" group-chat channel, all in one transaction.
   const workspace = await prisma.$transaction(async (tx) => {
     const created = await tx.workspace.create({ data: { name: input.name } });
     await tx.workspaceMember.create({
       data: { workspaceId: created.id, userId, role: 'OWNER' },
+    });
+    await tx.groupChannel.create({
+      data: {
+        workspaceId: created.id,
+        name: 'general',
+        description: 'Team-wide chat',
+        createdById: userId,
+      },
     });
     return created;
   });

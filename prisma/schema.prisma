@@ -38,6 +38,12 @@ enum InvitationStatus {
   REVOKED
 }
 
+// Who authored a chat message in the project AI assistant.
+enum ChatRole {
+  USER
+  ASSISTANT
+}
+
 // What an in-app notification is about — drives its icon and how the frontend
 // builds the click-through link from the `data` payload.
 enum NotificationType {
@@ -46,6 +52,7 @@ enum NotificationType {
   COMMENT_REPLY
   COMMENT_ADDED
   RECOMMENDATION_CREATED
+  GROUP_MENTION
 }
 
 // Support conversation lifecycle (Fritlow staff ↔ a user).
@@ -96,6 +103,10 @@ model User {
   assignedSupport      SupportConversation[] @relation("SupportAssignee")
   supportMessages      SupportMessage[]      @relation("SupportSender")
   notifications        Notification[]
+  chatConversations    ChatConversation[]
+  groupChannelsCreated GroupChannel[]     @relation("GroupChannelCreator")
+  groupMessages        GroupMessage[]     @relation("GroupMessageSender")
+  groupChannelReads    GroupChannelRead[]
 }
 
 // Tenancy root: every project will live inside a workspace.
@@ -109,6 +120,7 @@ model Workspace {
   members     WorkspaceMember[]
   projects    Project[]
   invitations WorkspaceInvitation[]
+  channels    GroupChannel[]
 }
 
 enum AiCallStatus {
@@ -316,6 +328,89 @@ enum DecisionStatus {
   REVERSED
 }
 
+// Project AI assistant ("founder copilot"). Conversations are PERSONAL — scoped
+// to the project AND their creator — so they cascade away cleanly if either the
+// project or the user is deleted (no sentinel needed).
+model ChatConversation {
+  id            String   @id @default(uuid())
+  title         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  lastMessageAt DateTime @default(now())
+
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId   String
+  createdBy   User    @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdById String
+
+  messages ChatMessage[]
+
+  @@index([projectId, createdById])
+}
+
+model ChatMessage {
+  id             String   @id @default(uuid())
+  role           ChatRole
+  content        String
+  createdAt      DateTime @default(now())
+
+  conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId String
+
+  @@index([conversationId])
+}
+
+// Workspace team chat — Slack-style named channels. All workspace members can
+// see all channels (public only in V1). Real-time delivery is over Socket.io;
+// these tables are the durable history + unread state.
+model GroupChannel {
+  id            String   @id @default(uuid())
+  name          String
+  description   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  lastMessageAt DateTime @default(now()) // denormalized for unread + sorting
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId String
+  // Nullable + SetNull: deleting the creator just orphans authorship, not the channel.
+  createdBy   User?  @relation("GroupChannelCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdById String?
+
+  messages GroupMessage[]
+  reads    GroupChannelRead[]
+
+  @@index([workspaceId])
+}
+
+model GroupMessage {
+  id        String   @id @default(uuid())
+  body      String
+  createdAt DateTime @default(now())
+
+  channel   GroupChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  channelId String
+  // Required sender; reassigned to the "Deleted User" sentinel on account deletion.
+  sender    User   @relation("GroupMessageSender", fields: [senderId], references: [id])
+  senderId  String
+
+  @@index([channelId, createdAt])
+}
+
+// Per-member read cursor for a channel → drives the unread badge. Personal, so
+// it just cascades away when the user (or channel) is deleted.
+model GroupChannelRead {
+  id         String   @id @default(uuid())
+  lastReadAt DateTime @default(now())
+
+  channel   GroupChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  channelId String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+
+  @@unique([channelId, userId])
+}
+
 // An in-app notification for one user. Personal (not shared content), so it just
 // cascades away when the user is deleted. `data` is a small JSON blob the
 // frontend uses to build the click-through route (no hardcoded URLs server-side).
@@ -461,6 +556,7 @@ model Project {
   healthScore            HealthScore?
   blueprintSectionVersions BlueprintSectionVersion[]
   comments               Comment[]
+  chatConversations      ChatConversation[]
 
   @@index([workspaceId])
 }
