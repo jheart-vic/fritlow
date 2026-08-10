@@ -413,6 +413,32 @@ The `deleted-user@fritlow.internal` anonymization placeholder is excluded from a
 
 ---
 
+## 18. Support chat — users ↔ Fritlow staff
+
+Human support threads. Two sides, same data. Delivery is **poll-based** for V1 (re-fetch to see new messages; no websockets/SSE). Each conversation carries a `hasUnread` boolean computed **for the side that's asking** (a user never sees their own message as unread).
+
+**User side — `/api/v1/support` (any authenticated user):**
+
+| Method + path | Body | Success | Notes |
+|---|---|---|---|
+| `POST /support/conversations` | `{ subject?, message }` | **201** `{ conversation }` | Opens a thread with a first message. |
+| `GET /support/conversations` | — | **200** `{ conversations }` | My threads, newest activity first, each with `hasUnread`. |
+| `GET /support/conversations/:id` | — | **200** `{ conversation }` (with `messages[]`) | Marks the thread read for me. 404 if not mine. |
+| `POST /support/conversations/:id/messages` | `{ body }` | **201** `{ message }` | Posting **reopens** a CLOSED thread. |
+
+**Staff side — `/api/v1/admin/support` (platformRole SUPPORT or SUPERADMIN; else 403):**
+
+| Method + path | Body / query | Success | Notes |
+|---|---|---|---|
+| `GET /admin/support/conversations` | `?status`, `?page`, `?limit` | **200** paginated | The inbox. Each row includes the `customer` and staff-side `hasUnread`. |
+| `GET /admin/support/conversations/:id` | — | **200** `{ conversation }` (with `messages[]`) | Marks read for staff. |
+| `POST /admin/support/conversations/:id/messages` | `{ body }` | **201** `{ message }` | The first staff reply **claims** the thread (`assignedAdminId`). |
+| `PATCH /admin/support/conversations/:id` | `{ status }` | **200** `{ conversation }` | Set `OPEN` / `CLOSED`. |
+
+`SupportMessage`: `{ id, body, senderType: "USER"|"STAFF", senderId, sender:{id,fullName}, createdAt }`. `SupportConversation`: `{ id, subject, status, lastMessageAt, assignedAdminId, hasUnread, customer?(staff only), messages?(detail) }`. Poll `GET …/conversations` for the unread badge and the detail endpoint for new messages while a thread is open.
+
+---
+
 ## Postman — full walkthrough
 
 Setup: `npm run dev` running; environment with `baseUrl = http://localhost:4000`. Postman handles the `fritlow_rt` cookie automatically. After step 1, set every request's Authorization to **Bearer Token** = `{{accessToken}}` (or set it once on a collection and inherit).

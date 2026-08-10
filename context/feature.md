@@ -60,7 +60,8 @@ Note on **Notifications** (P2 above) — still CHALLENGE BEFORE BUILDING: dashbo
 - [x] **P2: Comments** — section-anchored, threaded `parentId`; POST/GET nested, DELETE flat `/api/v1/comments/{id}`; author-or-OWNER/ADMIN delete + cascade; E2E-verified
 - [x] **Account deletion** — `DELETE /settings/account` (password re-auth); cascade personal + anonymize shared to "Deleted User" sentinel; blocks last-owner-of-shared-with-members; E2E+DB-verified
 - [x] **Admin foundation (Phase 2)** — `platformRole` USER/SUPPORT/**SUPERADMIN** (renamed from ADMIN so it never collides with WorkspaceRole) + `requirePlatformRole` (DB-read, instant revoke) + `/admin/stats|users|users/:id`. **Admin is env-seeded (`ADMIN_EMAIL`/`ADMIN_PASSWORD`), never registers** — logs in via normal `/auth/login`; `scripts/make-admin.ts` adds SUPPORT staff. E2E-verified. ⚠️ migration `add_platform_role` applied via pooled DDL — needs `migrate resolve --applied` when Neon direct endpoint recovers (see session.md S16).
-- [ ] **Admin side cont.** ← NEXT: Phase 3 support chat (admin↔user) → Phase 4 Notifications (serves comments/invites/support). (New asks 2026-08-09.)
+- [x] **Support chat (Phase 3)** — `SupportConversation`/`SupportMessage`; user `/support/*` + staff `/admin/support/*`; unread via lastReadAt timestamps, staff-claim, reopen-on-user-reply; account-deletion reassigns staff msgs to sentinel; E2E-verified. (migration `add_support_chat`; platformRole migration reconciled via `migrate resolve`.)
+- [ ] **Notifications (Phase 4)** ← NEXT: `GET /notifications`, `PATCH /:id/read`, `POST /read-all`; fire-and-forget triggers (support reply, comment/reply, invite, blueprint complete).
 - [ ] **P2: AI Chat** (SSE, spec item 11) — after the admin/support work
 - [ ] Test harness (unit + integration) — biggest DoD gap
 - [ ] Subscriptions/billing, audit logs (post-deploy)

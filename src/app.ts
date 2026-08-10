@@ -19,6 +19,7 @@ import { projectRouter } from './modules/projects/project.routes';
 import { recommendationRouter } from './modules/recommendations/recommendation.routes';
 import { searchRouter } from './modules/search/search.routes';
 import { settingsRouter } from './modules/settings/settings.routes';
+import { supportAdminRouter, supportRouter } from './modules/support/support.routes';
 import { templateRouter } from './modules/templates/templates.routes';
 import { workspaceRouter } from './modules/workspaces/workspace.routes';
 
@@ -77,6 +78,8 @@ app.use(
 );
 app.use('/api/v1/comments', commentRouter);
 app.use('/api/v1/admin', adminRouter);
+app.use('/api/v1/support', supportRouter);
+app.use('/api/v1/admin/support', supportAdminRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

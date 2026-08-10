@@ -187,6 +187,58 @@ export const swaggerSpec = swaggerJsdoc({
             },
           },
         },
+        SupportMessage: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            body: { type: 'string' },
+            senderType: { type: 'string', enum: ['USER', 'STAFF'] },
+            senderId: { type: 'string', format: 'uuid' },
+            sender: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                fullName: { type: 'string' },
+              },
+            },
+            createdAt: { type: 'string', format: 'date-time' },
+          },
+        },
+        SupportConversation: {
+          type: 'object',
+          description:
+            'A support thread. `hasUnread` is computed for the requesting side (user vs staff). `customer` appears only on staff responses.',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            subject: { type: 'string', nullable: true },
+            status: { type: 'string', enum: ['OPEN', 'CLOSED'] },
+            lastMessageAt: { type: 'string', format: 'date-time' },
+            createdAt: { type: 'string', format: 'date-time' },
+            updatedAt: { type: 'string', format: 'date-time' },
+            assignedAdminId: { type: 'string', format: 'uuid', nullable: true },
+            hasUnread: { type: 'boolean' },
+            customer: {
+              type: 'object',
+              nullable: true,
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                fullName: { type: 'string' },
+                email: { type: 'string', format: 'email' },
+              },
+            },
+          },
+        },
+        SupportConversationDetail: {
+          allOf: [
+            { $ref: '#/components/schemas/SupportConversation' },
+            {
+              type: 'object',
+              properties: {
+                messages: { type: 'array', items: { $ref: '#/components/schemas/SupportMessage' } },
+              },
+            },
+          ],
+        },
         Comment: {
           type: 'object',
           description: 'A comment on a blueprint section. `replies` holds nested thread replies.',

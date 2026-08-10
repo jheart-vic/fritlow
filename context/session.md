@@ -5,6 +5,24 @@
 
 ---
 
+## Session 17 — 2026-08-10
+
+### Reconciled the pending migration (Neon direct endpoint recovered)
+- `npx prisma migrate resolve --applied 20260809132014_add_platform_role` → recorded; `migrate status` = "up to date". The S16 gotcha is CLEARED. All migrations now tracked normally.
+
+### Done — Phase 3: Support chat (admin ↔ user)
+- New enums `SupportStatus` (OPEN/CLOSED), `SupportSenderType` (USER/STAFF). Models `SupportConversation` (customer, optional subject, status, assignedAdmin [SetNull], `lastMessageAt` + `userLastReadAt`/`staffLastReadAt` for unread) + `SupportMessage` (senderType snapshot, senderId, body). Migration `20260810035153_add_support_chat` (clean `migrate dev`). Back-relations on User (SupportCustomer/SupportAssignee/SupportSender).
+- New `src/modules/support/` — two routers: `supportRouter` `/api/v1/support` (requireAuth) + `supportAdminRouter` `/api/v1/admin/support` (requireAuth + requirePlatformRole SUPERADMIN/SUPPORT). Endpoints: user start/list/get/postMessage; staff inbox(list+status filter+pagination)/get/postMessage/PATCH status.
+- **Unread model:** each side's `lastReadAt` bumped on send AND view, so `hasUnread = lastMessageAt > myLastReadAt` needs no per-message read rows and never flags your own messages. Staff's first reply **claims** the thread (assignedAdminId). User reply **reopens** a CLOSED thread.
+- **Account-deletion updated:** `deleteAccount` now also reassigns `SupportMessage.senderId` → sentinel (staff messages in others' threads; own customer threads cascade via customerId; assignedAdmin is SetNull).
+- Swagger `SupportConversation`/`SupportConversationDetail`/`SupportMessage`; frontend-guide new §18.
+- **E2E-verified:** start (hasUnread false for creator); staff inbox shows customer + hasUnread true; staff open→read + reply→201 STAFF + claims (assignedAdminId set); U hasUnread true after staff reply → false after opening; staff CLOSE → U reply REOPENS (status OPEN); thread accumulates messages; U2→404, normal→/admin/support 403, no-auth 401, empty msg 400. (Neon dropped a few pooled connections mid-run → transient 500s; all passed on warm retry.) Test data cleaned (support msgs/convos deleted first due to senderId RESTRICT, then users).
+
+### Next
+- Phase 4: **Notifications** (`GET /notifications`, `PATCH /:id/read`, `POST /read-all`; fire-and-forget triggers: support reply, comment/reply, invite, blueprint complete). Then AI Chat. Test harness still biggest DoD gap.
+
+---
+
 ## Session 16 — 2026-08-09
 
 ### Planning — user raised 3 new asks (account deletion, notifications need?, Fritlow-internal admin side)
@@ -37,6 +55,7 @@ Confirmed scope + laid out a 4-phase plan; user chose (via decision prompt): **a
 - **E2E-verified:** boot seeds `[admin] platform SUPERADMIN ready`; login with env creds → token; `/admin/stats` 200 (after one transient Neon ConnectionClosed 500 → retry OK); `/admin/users?q` shows platformRole SUPERADMIN; register-as-admin → 409. Test admin (boss@fritlow.io) cleaned. typecheck clean.
 - **Login endpoint** (user asked): single shared `POST /api/v1/auth/login` — admin is not special-cased, only its `platformRole` differs.
 
+### ⚠️ MIGRATION GOTCHA — ✅ RESOLVED in Session 17 (see top). Original note below for history.
 ### ⚠️ MIGRATION GOTCHA — needs reconciliation when Neon direct endpoint recovers
 Neon's **direct** endpoint was down (P1001) during this session; **pooled** was up. So `add_platform_role` migration file is staged at `prisma/migrations/20260809132014_add_platform_role/` but the **DDL was applied via the POOLED connection** (raw `CREATE TYPE`+`ALTER TABLE`), NOT through `prisma migrate` — so it is **NOT recorded in `_prisma_migrations`**. **TO DO when direct endpoint is reachable:** run `npx prisma migrate resolve --applied 20260809132014_add_platform_role` (marks it applied without re-running — re-running would fail on "type already exists"). Until then `migrate dev`/`deploy` will think it's pending. The DB column exists and works at runtime (pooled).
 

@@ -128,6 +128,10 @@ export async function deleteAccount(userId: string, input: DeleteAccountInput): 
       await tx.blueprintSectionVersion.updateMany({ where: { editedById: userId }, data: { editedById: sentinelId } });
       await tx.export.updateMany({ where: { createdById: userId }, data: { createdById: sentinelId } });
       await tx.workspaceInvitation.updateMany({ where: { invitedById: userId }, data: { invitedById: sentinelId } });
+      // Support messages the user sent as STAFF live in other people's threads —
+      // reassign them. (Their own customer threads cascade via customerId; the
+      // assignedAdmin FK is SetNull, so no action needed there.)
+      await tx.supportMessage.updateMany({ where: { senderId: userId }, data: { senderId: sentinelId } });
 
       // 3. Delete the user — memberships and all token tables cascade.
       await tx.user.delete({ where: { id: userId } });

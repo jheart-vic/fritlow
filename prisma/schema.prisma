@@ -38,6 +38,19 @@ enum InvitationStatus {
   REVOKED
 }
 
+// Support conversation lifecycle (Fritlow staff ↔ a user).
+enum SupportStatus {
+  OPEN
+  CLOSED
+}
+
+// Who wrote a support message — snapshotted on the message so it survives the
+// sender's later role changes (or account deletion → reassigned to sentinel).
+enum SupportSenderType {
+  USER
+  STAFF
+}
+
 // The project lifecycle shown on the Projects screen:
 // Draft → Discovery → Blueprint Complete → Launched.
 enum ProjectStatus {
@@ -69,6 +82,9 @@ model User {
   blueprintSectionVersions BlueprintSectionVersion[]
   sentInvitations WorkspaceInvitation[]
   comments        Comment[]
+  supportConversations SupportConversation[] @relation("SupportCustomer")
+  assignedSupport      SupportConversation[] @relation("SupportAssignee")
+  supportMessages      SupportMessage[]      @relation("SupportSender")
 }
 
 // Tenancy root: every project will live inside a workspace.
@@ -241,6 +257,46 @@ model Comment {
   @@index([blueprintSectionId])
   @@index([projectId])
   @@index([parentId])
+}
+
+// A support thread between one end user (the "customer") and Fritlow staff.
+// Read state is tracked with two timestamps so each side can compute its own
+// unread badge without per-message read rows.
+model SupportConversation {
+  id              String        @id @default(uuid())
+  subject         String?
+  status          SupportStatus @default(OPEN)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  lastMessageAt   DateTime      @default(now()) // denormalized for inbox sorting
+  userLastReadAt  DateTime?
+  staffLastReadAt DateTime?
+
+  customer   User   @relation("SupportCustomer", fields: [customerId], references: [id], onDelete: Cascade)
+  customerId String
+  // Which staff member picked it up (optional). SetNull so deleting that staff
+  // account just unassigns the thread rather than blocking the delete.
+  assignedAdmin   User?   @relation("SupportAssignee", fields: [assignedAdminId], references: [id], onDelete: SetNull)
+  assignedAdminId String?
+
+  messages SupportMessage[]
+
+  @@index([customerId])
+  @@index([status, lastMessageAt])
+}
+
+model SupportMessage {
+  id         String            @id @default(uuid())
+  body       String
+  senderType SupportSenderType
+  createdAt  DateTime          @default(now())
+
+  conversation   SupportConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId String
+  sender         User                @relation("SupportSender", fields: [senderId], references: [id])
+  senderId       String
+
+  @@index([conversationId])
 }
 
 enum DecisionStatus {
