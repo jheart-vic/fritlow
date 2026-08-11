@@ -60,4 +60,5 @@ Persistent project memory lives in [context/](context/). **At the start of every
 
 ## Planned / TODO (not yet built)
 
-- **Adaptive discovery — hybrid generated plan + expanded fixed banks** (decided Session 20; not started). Discovery is currently a FIXED skeleton — 5 modules × 2 anchor questions = 10, hardcoded in `src/modules/discovery/questions.ts`. Planned change: at session start, AI generates a tailored, **persisted** per-project question plan (seeded from category/idea + template hints) that then runs deterministically; ALSO expand the static banks (the fallback + generation seed). Keep the Health Score rubric fixed for comparability; fall back to the bank on AI failure; frontend must render questions from the API (IDs become per-session). Full spec in [context/feature.md](context/feature.md) backlog.
+- _(Adaptive discovery — hybrid generated plan + expanded banks — **DONE** Session 21. Discovery now generates a tailored, persisted `questionPlan` per project with a deterministic base-plan fallback; 7 core modules + category packs in `questions.ts`. See session.md S21.)_
+- (nothing else queued here — remaining V1 work is broader test coverage + post-deploy billing/audit-logs)

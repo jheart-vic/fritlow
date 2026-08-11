@@ -5,6 +5,32 @@
 
 ---
 
+## Session 21 — 2026-08-11
+
+### Done — Adaptive Discovery (hybrid plan + expanded banks) + Blueprint SSE per-section events
+Both client-approved this session ("the hybrid is okay, the 2 new is good … build them"; then "build option B").
+
+**1. Adaptive Discovery.** Discovery interview is now tailored per project instead of a fixed 5×2=10 skeleton.
+- **Expanded library** ([questions.ts](../src/modules/discovery/questions.ts)): 7 core modules now — added `go_to_market` + `risks` (plus extra core questions in problem/customer/business_model/mvp_focus). New `categoryPacks` (saas, marketplace, mobile_app, fintech, edtech, healthtech, social_network) with `matchCategoryPack()` fuzzy alias matching; `assembleBasePlan(category)` = core + matched pack; `CORE_QUESTION_COUNT`; `getQuestion` now searches core+packs. `discoveryQuestions` kept as alias.
+- **Hybrid generation** (new [discovery.plan.ts](../src/modules/discovery/discovery.plan.ts)): `generateQuestionPlan(userId, project)` — builds base plan, asks AI to tailor/reword/add (returns strict JSON array, defensively parsed, 6–20 clamp, unique ids), and **falls back to the base plan on ANY failure/absent AI** (so start never fails, tests need no AI). Logs source.
+- **Persistence + refactor:** new `DiscoverySession.questionPlan` JSONB (migration `20260811092506_add_discovery_question_plan`, applied to dev + test DBs). `discovery.service.ts`: `resolvePlan(session, project)` (stored plan, else base plan for legacy null); `buildProgress(plan, answered)` returns `{answered, total, nextQuestion, questions}`. `startSession` generates+stores the plan (AWAITs the AI, ~seconds; tx `maxWait/timeout` bumped). submit/follow-up/complete all resolve the question from the SESSION PLAN, not the global bank. `total` is now the plan length.
+- **Consumers unaffected:** health/blueprint/chat/recommendations read the answer transcript generically (module+questionText+text) — no change. **Dashboard** fixed: selects `questionPlan`, `total` = plan length (fallback `CORE_QUESTION_COUNT`). **Health Score rubric stays fixed** (comparability preserved) — the key constraint we agreed.
+- **Docs:** swagger `DiscoveryProgress` (+`questions`, dynamic `total`) + discovery routes @openapi + frontend-guide §3 ("don't hardcode the list; render `questions`; start has AI latency; IDs per-session").
+
+**2. Blueprint SSE per-section events (Option B).** Frontend mockup revealed two things: (a) their section list was WRONG (invented "Technical Architecture"/"Go-to-Market" sections; the real 8 are fixed in [blueprint.sections.ts](../src/modules/blueprints/blueprint.sections.ts): executive_summary, problem_statement, solution, target_audience, business_model, differentiation, mvp_scope, success_metrics); (b) the SSE stream sends only raw `delta` chunks — and those are **partial JSON** (model emits one JSON object), NOT headed markdown, so heading pattern-matching can't work.
+- Built server-side `section` events: `createSectionTracker(onSection)` in blueprint.service watches the accumulating stream buffer for each section KEY appearing as a JSON key (`"<key>":`), derives writing→complete from key order, emits only on change. `generateBlueprintStream` now takes an `onSection` cb; controller sends `event: section {key,title,status}`. `delta`/`done`/`error` unchanged. Frontend can drive the checklist with ZERO stream parsing.
+- **Tracker unit-tested** (`blueprint.test.ts`, 4 tests, pure/no-AI): writing→complete pairs in order; no duplicate transitions; finish() completes all even if stream cut off; prose mention of a key doesn't false-trigger. Passed 4/4.
+- Docs: blueprint stream @openapi + frontend-guide §4 (event table + the fixed 8-section order + "build the checklist from `section`, not `delta`").
+
+### Tests / infra note
+- New `discovery.test.ts` (7 tests, deterministic via the no-AI fallback plan). typecheck clean throughout.
+- **Neon test-DB latency is the pain point:** a full-suite run took 456s and 4 tests hit the 30s timeout (even a trivial project PATCH) — pure latency, not logic. Bumped `testTimeout`/`hookTimeout` to 60s in vitest.config.mts. (A local Postgres would make the suite ~100× faster — noted for later; no Docker on this machine.)
+
+### Next
+- Confirm the full suite is green at 60s, commit. Then broaden test coverage (workspaces RBAC, search, comments, settings) + decide mock-AI vs live-key for AI paths. Live end-to-end check of adaptive plan generation + section events against GPT-5 still worth doing (the fallback path is what's integration-tested; the AI path is unit-covered only for the parser/tracker).
+
+---
+
 ## Session 20 — 2026-08-10
 
 ### Done — Test harness scaffolded (biggest DoD gap, first slice)

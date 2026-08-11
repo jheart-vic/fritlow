@@ -28,10 +28,12 @@ export default defineConfig({
     // clean DB via the beforeEach reset in setup.ts.)
     fileParallelism: false,
 
-    // Neon can cold-start after idling; give requests generous headroom so a
-    // slow first connection isn't a spurious failure.
-    testTimeout: 30_000,
-    hookTimeout: 30_000,
+    // The test DB is remote (Neon), so every request is a network round-trip
+    // and some tests fire many in sequence; Neon can also throttle/cold-start.
+    // Generous timeouts keep latency from causing spurious failures. (For a
+    // fast local inner loop, a local Postgres would cut this dramatically.)
+    testTimeout: 60_000,
+    hookTimeout: 60_000,
 
     include: ['src/**/*.test.ts'],
   },

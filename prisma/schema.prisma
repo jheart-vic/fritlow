@@ -164,6 +164,12 @@ model DiscoverySession {
   startedAt   DateTime        @default(now())
   completedAt DateTime?
 
+  // The tailored, per-project interview plan generated at session start
+  // (JSONB array of { id, module, text, hint? }). Null on legacy sessions —
+  // the service then falls back to the deterministic base plan from the
+  // question library. Frozen once generated, so progress/resume stay stable.
+  questionPlan Json?
+
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   projectId String  @unique // one session per project in V1
 
