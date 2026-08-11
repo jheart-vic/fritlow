@@ -5,6 +5,29 @@
 
 ---
 
+## Session 20 — 2026-08-10
+
+### Done — Test harness scaffolded (biggest DoD gap, first slice)
+- **Stack: Vitest + Supertest** (integration-first — import the real exported `app`, drive it in-process, hit real Prisma → real Postgres, which is where this codebase's logic lives). New devDeps: `vitest`, `supertest`, `@types/supertest`, `dotenv-cli`.
+- **DB isolation (the crux):** tests run against a **SEPARATE Neon test DB**, never dev/prod. Mechanism: [src/config/env.ts](../src/config/env.ts) now loads `.env.test` when `NODE_ENV=test` (was hardcoded `dotenv/config` → `.env`). `.env.test` is gitignored (template committed as the file with placeholder URLs + a real generated JWT secret). `setup.ts` TRUNCATEs every public table (discovered from `pg_tables`, excludes `_prisma_migrations`) `RESTART IDENTITY CASCADE` in `beforeEach` → every test starts clean; `afterAll` disconnects Prisma.
+- **Config:** [vitest.config.mts](../vitest.config.mts) — `environment:node`, `env:{NODE_ENV:test}`, `setupFiles`, **`fileParallelism:false`** (single shared test DB → files must not run concurrently), `testTimeout/hookTimeout 30s` (Neon cold-start headroom). `.mts` extension to dodge the CJS/ESM config warning.
+- **Helpers** ([src/test/helpers.ts](../src/test/helpers.ts)): `uniqueEmail()`, `registerAndLogin()` (registers via API → flips `emailVerifiedAt` directly in DB to skip the email token → logs in → returns `{accessToken, workspaceId, ...}`), `authHeader()`.
+- **Suites written:** `src/modules/auth/auth.test.ts` (13 tests: register no-tokens + workspace created, dup 409, short-pw 400, unverified login 403, verified login 200 + rt cookie, wrong-pw 401, unknown-email 401, verify-email valid→200/reuse→400/unknown→400 [seeds a known-raw token via `hashToken`], refresh rotation invalidates old, /me 200/no-token 401/garbage 401). `src/modules/projects/project.test.ts` (~11: create DRAFT + createdBy embed, 401, 400, list+status filter, patch, delete→204 then 404, **tenancy 403 on read/update/delete by outsider**, outsider list empty, unknown id 404).
+- **Scripts:** `test`, `test:watch`, `db:test:deploy` (`dotenv -e .env.test -- prisma migrate deploy`).
+- **Verified:** typecheck clean; `npx vitest run` discovers both suites, injects `.env.test`, executes all tests — they fail ONLY at DB connect (placeholder host), proving the entire harness above the DB is correct.
+
+### GREEN — user supplied a `test_db` (separate Neon database on the same project endpoint); all 16 migrations applied via `db:test:deploy`; **`npm test` → 22/22 passing** (~126s, dominated by Neon latency + bcrypt).
+- **Fixed a real flake, not test-only:** register's `$transaction` hit `P2028: Unable to start a transaction in the given time` on Neon pooled cold-start (default maxWait 2s). Bumped to `{ maxWait: 10000, timeout: 15000 }` in [auth.service.ts](../src/modules/auth/auth.service.ts) `register` — same Neon-cold-start remedy Session 8 applied to the recommendations tx. Suite green after.
+- Note: user's `.env.test` uses the SAME pooled host for both `DATABASE_URL` and `DIRECT_DATABASE_URL` (both `-pooler`); `migrate deploy` worked anyway this time. If migrations later P1001 against it, swap DIRECT to the non-pooler host.
+
+### Decision — adaptive discovery (future work, NOT built this session)
+- User asked whether the fixed 5-module / 10-question discovery skeleton (2 per module) could be made per-project flexible. Explained *why* it's fixed today (the guided process IS the product; fixed spine powers health-score comparability, progress/resume, stable answer IDs; deterministic = free/offline/testable). **Decision: keep current fixed design for now; do NOT build yet — logged as a backlog TODO** (feature.md + CLAUDE.md). Chosen direction when built: **hybrid generated plan + expanded fixed banks** (AI generates a persisted per-project question plan at session start, runs deterministically after; grow `questions.ts`; keep the Health Score rubric fixed; fall back to the bank on AI failure; frontend must render questions from the API). See feature.md backlog entry for the full spec.
+
+### Next
+- Once green: broaden coverage to the deterministic modules (workspaces RBAC, search, comments, settings, discovery skeleton). AI-dependent paths (blueprint gen, health, recs, chat) need a mock-AI strategy or a gated live-key run — decide later. Then deploy to Render.
+
+---
+
 ## Session 19 — 2026-08-10
 
 ### Done — AI Chat (SSE) + Group Chat (Socket.io) — the last P2 + a new real-time feature

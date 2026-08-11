@@ -1,5 +1,11 @@
-import 'dotenv/config';
+import { config as loadEnv } from 'dotenv';
 import { z } from 'zod';
+
+// Load the right env file for the run. Under NODE_ENV=test (Vitest sets this)
+// we read `.env.test` — pointed at a SEPARATE database — so the test suite can
+// truncate/reset tables without ever touching the dev or production database.
+// Every other run reads the normal `.env`.
+loadEnv({ path: process.env.NODE_ENV === 'test' ? '.env.test' : '.env' });
 
 // Validate environment variables once at startup. If anything is missing or
 // malformed the server refuses to boot with a clear message, instead of

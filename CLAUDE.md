@@ -57,3 +57,7 @@ Persistent project memory lives in [context/](context/). **At the start of every
 - Guard MVP scope — the six-module vision is large; V1 backend covers only what the five core screens need (see `summary.md`).
 - API changes must be reflected in the OpenAPI contract — it's what the frontend dev builds against.
 - Once scaffolding lands, add the actual build/dev/test commands to this file.
+
+## Planned / TODO (not yet built)
+
+- **Adaptive discovery — hybrid generated plan + expanded fixed banks** (decided Session 20; not started). Discovery is currently a FIXED skeleton — 5 modules × 2 anchor questions = 10, hardcoded in `src/modules/discovery/questions.ts`. Planned change: at session start, AI generates a tailored, **persisted** per-project question plan (seeded from category/idea + template hints) that then runs deterministically; ALSO expand the static banks (the fallback + generation seed). Keep the Health Score rubric fixed for comparability; fall back to the bank on AI failure; frontend must render questions from the API (IDs become per-session). Full spec in [context/feature.md](context/feature.md) backlog.

@@ -64,8 +64,14 @@ Note on **Notifications** (P2 above) — still CHALLENGE BEFORE BUILDING: dashbo
 - [x] **Notifications (Phase 4)** — `Notification` model; `GET /notifications` (+unreadCount, unread filter), `PATCH /:id/read`, `POST /read-all`, `DELETE /:id`; `notify()` fire-and-forget wired to 5 triggers (support reply both ways, workspace invite, comment reply, comment-added, recommendation-created); polling delivery; E2E-verified.
 - [x] **P2: AI Chat** — SSE, personal per-project copilot; `POST /projects/:id/chat` (+conversations CRUD); GPT-5-verified.
 - [x] **Group Chat (Socket.io)** — workspace named channels, real-time `message:new` broadcast, JWT socket auth, per-member unread, @mention notifications; Redis adapter guarded by `REDIS_URL` (in-memory fallback, crash-safe). E2E-verified. **New stack: socket.io + ioredis.**
-- [ ] **Test harness (unit + integration)** ← NEXT — biggest DoD gap
+- [~] **Test harness (unit + integration)** ← IN PROGRESS (Session 20) — Vitest + Supertest scaffolded; auth + projects suites written (13 + ~11 tests). **Blocked on user:** create a separate Neon test DB, fill `.env.test`, run `npm run db:test:deploy` then `npm test`. Wiring verified (env injects, suites discovered/run — fail only on placeholder DB host).
 - [ ] Subscriptions/billing, audit logs (post-deploy)
+- [ ] **Adaptive discovery — hybrid generated plan + expanded banks** (planned, NOT started; decided Session 20). Make the discovery interview per-project adaptive while staying deterministic once generated:
+  - **Hybrid generated plan:** at session start, AI generates a tailored module+question set for THIS project (seed from `project.category`/`oneLineIdea` + the existing `templates` `prefillDiscoveryHints`). **Persist the plan** (JSONB `questionPlan` on `DiscoverySession`, or a `DiscoveryQuestion` table) so the interview then runs deterministically — progress/resume/completion keep working (total = generated count, not the hardcoded 10). Fall back to the fixed bank if the AI call fails (keeps the interview offline/credit-safe).
+  - **Also expand the fixed banks:** grow the static `questions.ts` (more modules/anchors, possibly category-specific anchor sets) so the fallback and the generation seed are richer.
+  - **Keep the Health Score rubric FIXED** even when questions vary — grade the same dimensions regardless of what was asked, or cross-project comparability is lost. This is the key constraint.
+  - **Frontend contract:** frontend must render questions from the API response (stop hardcoding the 5×2 flow); question IDs become per-session/generated, not global constants. Update OpenAPI + frontend-guide when built.
+  - Migrates today's fixed skeleton (`src/modules/discovery/questions.ts`: 5 modules × 2 = 10 anchors) from code → data.
 
 ### Docs to keep current with any API change
 - OpenAPI `@openapi` blocks in `*.routes.ts` (the frontend contract, served at /docs)
