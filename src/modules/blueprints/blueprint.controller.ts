@@ -29,6 +29,7 @@ export async function generateStream(req: Request, res: Response) {
       req.user!.id,
       projectId(req),
       (text) => send('delta', { text }),
+      (section) => send('section', section),
     );
     send('done', { blueprint });
   } catch (err) {

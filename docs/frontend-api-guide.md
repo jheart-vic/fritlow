@@ -73,15 +73,20 @@ Every project object embeds its creator, so the UI can show "created by …" wit
 
 ## 3. Discovery Interview — `/api/v1/projects/:projectId/discovery`
 
-The signature feature. V1 has a fixed bank of **10 questions across 5 modules** (`problem`, `customer`, `business_model`, `differentiation`, `mvp_focus`), 2 questions each. Question IDs are stable strings like `problem.core`, `customer.who`, `mvp_focus.success`.
+The signature feature. **The interview is now tailored per project (adaptive discovery).** When a founder starts, the AI builds a custom question plan for THAT project from an expanded library (7 core modules — `problem`, `customer`, `business_model`, `differentiation`, `mvp_focus`, `go_to_market`, `risks`) plus a category-specific pack (SaaS / marketplace / fintech / …). The plan is **frozen once generated** and returned on every discovery response as a `questions` array.
+
+**Key changes for the frontend:**
+- **Don't hardcode the question list** — render it from the `questions` array the API returns. Question IDs are per-session now (still stable strings like `problem.core`; tailored/added ones may look like `custom.1`).
+- **`total` is dynamic** — it's the length of this project's plan, not a fixed 10. Drive the progress bar off `answered / total`.
+- **`POST /` (start) now makes an AI call** — expect a few seconds' latency on that one call. If the AI is down it falls back to a fixed base plan, so it never fails.
 
 | Method + path | Body | Success | Notes |
 |---|---|---|---|
-| `POST /` | — | **201** session + progress | Starts the interview, flips project to DISCOVERY. 409 if already started |
-| `GET /` | — | **200** (below) | The resume screen: session + all answers + progress + next question |
-| `POST /answers` | `{ questionId, answer, followUpAnswer? }` | **200** `{ answered, total, nextQuestion, confidence, confidenceLabel }` | Upsert — re-answering the same question replaces it. `confidence` (0–100) + `confidenceLabel` (LOW/MEDIUM/HIGH) are the **AI confidence meter** for the answer just submitted, or `null` if the server has no AI key. 400 if session closed |
+| `POST /` | — | **201** session + progress + `questions` | Starts the interview, generates the tailored plan (AI, a few seconds), flips project to DISCOVERY. 409 if already started |
+| `GET /` | — | **200** (below) | The resume screen: session + all answers + progress + next question + the full `questions` plan |
+| `POST /answers` | `{ questionId, answer, followUpAnswer? }` | **200** `{ answered, total, nextQuestion, questions, confidence, confidenceLabel }` | Upsert — re-answering the same question replaces it. `confidence` (0–100) + `confidenceLabel` (LOW/MEDIUM/HIGH) are the **AI confidence meter** for the answer just submitted, or `null` if the server has no AI key. 400 (unknown `questionId` for this session, or session closed) |
 | `POST /answers/:questionId/follow-up` | — | **200** `{ questionId, followUp }` | **AI Challenge Mode**: generates one probing follow-up question about this answer. 400 if question unanswered; 503 if server has no AI key. Reply by re-POSTing `/answers` with `followUpAnswer` |
-| `POST /complete` | — | **200** | Only when all 10 answered — else 400 with a clear message |
+| `POST /complete` | — | **200** | Only when every question in the plan is answered — else 400 with a clear message |
 
 `GET /` response shape:
 
@@ -95,12 +100,17 @@ The signature feature. V1 has a fixed bank of **10 questions across 5 modules** 
                    "answeredAt": "…" } ]
   },
   "answered": 3,
-  "total": 10,
-  "nextQuestion": { "id": "problem.evidence", "module": "problem", "text": "…", "hint": "…" }
+  "total": 12,
+  "nextQuestion": { "id": "problem.evidence", "module": "problem", "text": "…", "hint": "…" },
+  "questions": [
+    { "id": "problem.core", "module": "problem", "text": "…", "hint": "…" },
+    { "id": "problem.evidence", "module": "problem", "text": "…", "hint": "…" }
+    /* … the full tailored plan, in order … */
+  ]
 }
 ```
 
-UI flow: render `nextQuestion` (with its `hint`), POST the answer, optionally hit the follow-up endpoint to let the AI push back, re-fetch or advance locally, and show `answered/total` as the progress meter. `nextQuestion` is `null` when everything's answered — then show the "Complete interview" CTA.
+UI flow: render the interview from `questions` (each has a `hint`); `nextQuestion` is a convenience pointer to the first unanswered one. POST each answer, optionally hit the follow-up endpoint to let the AI push back, and show `answered / total` as the progress meter. `nextQuestion` is `null` when everything's answered — then show the "Complete interview" CTA.
 
 ### Follow-up (Challenge Mode) round-trip — order matters
 
@@ -110,7 +120,7 @@ UI flow: render `nextQuestion` (with its `hint`), POST the answer, optionally hi
 # 1. Answer the anchor question
 POST /api/v1/projects/{id}/discovery/answers
   { "questionId": "problem.core", "answer": "Teams lose track of action items from meetings." }
-→ 200 { "answered": 1, "total": 10, "nextQuestion": { "id": "problem.evidence", … } }
+→ 200 { "answered": 1, "total": 12, "nextQuestion": { "id": "problem.evidence", … } }
 
 # 2. Generate the AI follow-up (Challenge Mode)
 POST /api/v1/projects/{id}/discovery/answers/problem.core/follow-up
@@ -120,7 +130,7 @@ POST /api/v1/projects/{id}/discovery/answers/problem.core/follow-up
 POST /api/v1/projects/{id}/discovery/answers
   { "questionId": "problem.core", "answer": "Teams lose track of action items from meetings.",
     "followUpAnswer": "B2B customer-success teams running QBRs — I interviewed 15 and 12 confirmed it." }
-→ 200 { "answered": 1, "total": 10, "nextQuestion": { … } }
+→ 200 { "answered": 1, "total": 12, "nextQuestion": { … } }
 
 # 4. Read the stored follow-up back (question + reply) — it lives on the answer's JSONB
 GET /api/v1/projects/{id}/discovery
@@ -171,10 +181,18 @@ After saving a section, ask which *other* sections the edit may have made incons
 `Content-Type: text/event-stream` response. Use `fetch` with a stream reader (native `EventSource` can't POST or send a Bearer header — use `fetch` + `ReadableStream` or the `@microsoft/fetch-event-source` package). Events:
 
 ```
-event: delta   data: {"text":"…chunk of generated markdown…"}   ← many of these; append to a live preview
-event: done    data: {"blueprint":{ …full persisted blueprint with sections… }}
-event: error   data: {"error":"…"}   ← generation failed mid-stream (HTTP status is already 200 by then)
+event: delta    data: {"text":"…raw chunk…"}                         ← many; see the warning below
+event: section  data: {"key":"business_model","title":"Business Model","status":"writing"}
+event: section  data: {"key":"business_model","title":"Business Model","status":"complete"}
+event: done     data: {"blueprint":{ …full persisted blueprint with sections… }}
+event: error    data: {"error":"…"}   ← generation failed mid-stream (HTTP status is already 200 by then)
 ```
+
+**Build your section-progress checklist from `section` events, NOT from `delta`.** The model streams a single JSON object (keys = section keys), so `delta` chunks are **partial JSON, not headed markdown** — don't try to detect headings in them. Each `section` event tells you a section moved to `writing` then `complete`, emitted **in order**, so you can drive the exact "Problem Statement ✓ / Business Model … writing" UI without parsing anything. The 8 sections are fixed and always arrive in this order:
+
+`executive_summary` (Executive Summary) → `problem_statement` (Problem Statement) → `solution` (Solution) → `target_audience` (Target Audience) → `business_model` (Business Model) → `differentiation` (Differentiation & Moat) → `mvp_scope` (MVP Scope) → `success_metrics` (Success Metrics).
+
+Use `delta` only if you want a live "typing" shimmer; otherwise you can ignore it and render real content from the `done` payload. (Note: there is **no** "Technical Architecture" or "Go-to-Market" *section* — those aren't part of the blueprint; Go-to-Market is a discovery interview topic.)
 
 ---
 
@@ -252,7 +270,7 @@ The "what should I do next?" screen in one call:
   "projects": [
     {
       "id": "…", "name": "…", "oneLineIdea": "…", "status": "DISCOVERY", "updatedAt": "…",
-      "discoveryProgress": { "answered": 4, "total": 10 },
+      "discoveryProgress": { "answered": 4, "total": 12 },
       "hasBlueprint": false,
       "nextAction": { "type": "CONTINUE_DISCOVERY", "label": "Continue the interview (4/10 answered)", "projectId": "…" }
     }

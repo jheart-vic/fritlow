@@ -95,20 +95,26 @@ export async function register(input: RegisterInput): Promise<{ user: PublicUser
 
   // $transaction: either the user AND their personal workspace are created,
   // or neither is — no half-registered accounts.
-  const user = await prisma.$transaction(async (tx) => {
-    const created = await tx.user.create({
-      data: { email: input.email, fullName: input.fullName, passwordHash },
-    });
+  // maxWait/timeout are bumped from Prisma's 2s/5s defaults because Neon's
+  // pooled endpoint can be cold on the first hit after idling, and acquiring
+  // the transaction connection then takes longer than 2s (→ P2028).
+  const user = await prisma.$transaction(
+    async (tx) => {
+      const created = await tx.user.create({
+        data: { email: input.email, fullName: input.fullName, passwordHash },
+      });
 
-    await tx.workspace.create({
-      data: {
-        name: `${input.fullName.split(' ')[0]}'s Workspace`,
-        members: { create: { userId: created.id, role: 'OWNER' } },
-      },
-    });
+      await tx.workspace.create({
+        data: {
+          name: `${input.fullName.split(' ')[0]}'s Workspace`,
+          members: { create: { userId: created.id, role: 'OWNER' } },
+        },
+      });
 
-    return created;
-  });
+      return created;
+    },
+    { maxWait: 10000, timeout: 15000 },
+  );
 
   // Auto-join any workspaces this email was invited to before signing up.
   // Fire-and-forget: registration must not fail if this has a hiccup.

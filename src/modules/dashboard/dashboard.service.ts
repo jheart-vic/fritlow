@@ -1,5 +1,5 @@
 import { prisma } from '../../lib/prisma';
-import { discoveryQuestions } from '../discovery/questions';
+import { CORE_QUESTION_COUNT } from '../discovery/questions';
 
 // The dashboard's design north star: answer "what should I do next?" in
 // three seconds. This service computes exactly one recommended action per
@@ -31,16 +31,14 @@ interface DashboardProject {
 function buildNextAction(project: {
   id: string;
   status: string;
-  session: { status: string; answeredCount: number } | null;
+  session: { status: string; answeredCount: number; total: number } | null;
   hasBlueprint: boolean;
 }): NextAction {
-  const total = discoveryQuestions.length;
-
   if (!project.session) {
     return { type: 'START_DISCOVERY', label: 'Start the discovery interview', projectId: project.id };
   }
   if (project.session.status === 'ACTIVE') {
-    const { answeredCount } = project.session;
+    const { answeredCount, total } = project.session;
     return answeredCount < total
       ? {
           type: 'CONTINUE_DISCOVERY',
@@ -67,15 +65,19 @@ export async function getDashboard(userId: string): Promise<{
     orderBy: { updatedAt: 'desc' },
     include: {
       discoverySession: {
-        select: { status: true, _count: { select: { answers: true } } },
+        select: { status: true, questionPlan: true, _count: { select: { answers: true } } },
       },
       blueprint: { select: { id: true } },
     },
   });
 
   const dashboardProjects: DashboardProject[] = projects.map((p) => {
+    // Total question count is per-project now (the session's tailored plan).
+    // Legacy sessions with no stored plan fall back to the core-question count.
+    const plan = p.discoverySession?.questionPlan;
+    const total = Array.isArray(plan) && plan.length > 0 ? plan.length : CORE_QUESTION_COUNT;
     const session = p.discoverySession
-      ? { status: p.discoverySession.status, answeredCount: p.discoverySession._count.answers }
+      ? { status: p.discoverySession.status, answeredCount: p.discoverySession._count.answers, total }
       : null;
     return {
       id: p.id,
@@ -84,7 +86,7 @@ export async function getDashboard(userId: string): Promise<{
       status: p.status,
       updatedAt: p.updatedAt,
       discoveryProgress: session
-        ? { answered: session.answeredCount, total: discoveryQuestions.length }
+        ? { answered: session.answeredCount, total: session.total }
         : null,
       hasBlueprint: Boolean(p.blueprint),
       nextAction: buildNextAction({

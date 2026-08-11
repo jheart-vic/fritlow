@@ -15,7 +15,12 @@ discoveryRouter.use(requireAuth);
  *   post:
  *     tags: [Discovery]
  *     summary: Start the discovery interview for a project
- *     description: Creates the session and moves the project to DISCOVERY status. One session per project.
+ *     description: >
+ *       Creates the session and moves the project to DISCOVERY status. One session per project.
+ *       At start, the AI generates a TAILORED interview plan for this project (from its idea +
+ *       category) — so expect a few seconds' latency here. The plan is returned in `questions`
+ *       and frozen for the session. If the AI is unavailable it falls back to a fixed base plan,
+ *       so starting never fails. `total` is the plan length (varies per project, not a fixed 10).
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -102,9 +107,19 @@ discoveryRouter.get('/', discoveryController.get);
  *               type: object
  *               properties:
  *                 answered: { type: integer, example: 4 }
- *                 total: { type: integer, example: 10 }
+ *                 total: { type: integer, example: 12, description: "Length of this project's tailored plan (varies per project)." }
  *                 confidence: { type: integer, nullable: true, minimum: 0, maximum: 100, example: 72 }
  *                 confidenceLabel: { type: string, nullable: true, enum: [LOW, MEDIUM, HIGH] }
+ *                 questions:
+ *                   type: array
+ *                   description: The full tailored plan for this project (same list on every discovery response).
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: string }
+ *                       module: { type: string }
+ *                       text: { type: string }
+ *                       hint: { type: string }
  *                 nextQuestion:
  *                   type: object
  *                   nullable: true

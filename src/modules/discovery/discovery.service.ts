@@ -1,9 +1,11 @@
+import type { Prisma } from '../../generated/prisma/client';
 import { prisma } from '../../lib/prisma';
 import * as aiService from '../../lib/ai/ai.service';
 import { ApiError } from '../../utils/api-error';
 import { getProject } from '../projects/project.service';
 import { triggerRecommendations } from '../recommendations/recommendation.service';
-import { discoveryQuestions, getQuestion } from './questions';
+import { generateQuestionPlan, type PlanQuestion } from './discovery.plan';
+import { assembleBasePlan } from './questions';
 import type { SubmitAnswerInput } from './discovery.schemas';
 
 // Shape of the JSONB `answer` column on DiscoveryAnswer.
@@ -61,14 +63,30 @@ async function gradeAnswerConfidence(
 // getProject (from the projects service) doubles as the access gate here:
 // it 404s on unknown projects and 403s non-members before anything runs.
 
-// Progress = which anchor questions have answers. The next question is the
-// first unanswered one, in bank order — deterministic and resumable.
-function buildProgress(answeredIds: Set<string>) {
-  const next = discoveryQuestions.find((q) => !answeredIds.has(q.id)) ?? null;
+// The interview questions for a session = its stored per-project plan. Legacy
+// sessions (created before plans existed) have a null plan; we fall back to the
+// deterministic base plan built from the project's category so they still work.
+function resolvePlan(
+  session: { questionPlan: unknown },
+  project: { category: string | null },
+): PlanQuestion[] {
+  const stored = session.questionPlan;
+  if (Array.isArray(stored) && stored.length > 0) {
+    return stored as PlanQuestion[];
+  }
+  return assembleBasePlan(project.category);
+}
+
+// Progress = which plan questions have answers. The next question is the first
+// unanswered one, in plan order — deterministic and resumable. The full plan is
+// returned too, so the frontend can render the whole interview up front.
+function buildProgress(plan: PlanQuestion[], answeredIds: Set<string>) {
+  const next = plan.find((q) => !answeredIds.has(q.id)) ?? null;
   return {
     answered: answeredIds.size,
-    total: discoveryQuestions.length,
+    total: plan.length,
     nextQuestion: next,
+    questions: plan,
   };
 }
 
@@ -80,18 +98,30 @@ export async function startSession(userId: string, projectId: string) {
     throw ApiError.conflict('This project already has a discovery session');
   }
 
-  // Creating the session moves the project into DISCOVERY — one transaction,
-  // so the session and the status flip can't disagree.
-  const [session] = await prisma.$transaction([
-    prisma.discoverySession.create({ data: { projectId } }),
-    prisma.project.update({ where: { id: project.id }, data: { status: 'DISCOVERY' } }),
-  ]);
+  // Build the tailored per-project interview plan BEFORE the transaction (it
+  // makes one AI call, ~seconds). This is best-effort: generateQuestionPlan
+  // always resolves — to the deterministic base plan if AI is unavailable — so
+  // starting an interview never fails because of the model.
+  const plan = await generateQuestionPlan(userId, project);
 
-  return { session, ...buildProgress(new Set()) };
+  // Creating the session moves the project into DISCOVERY — one transaction,
+  // so the session and the status flip can't disagree. The plan is stored on
+  // the session and frozen from here, so progress/resume stay stable.
+  const [session] = await prisma.$transaction(
+    [
+      prisma.discoverySession.create({
+        data: { projectId, questionPlan: plan as unknown as Prisma.InputJsonValue },
+      }),
+      prisma.project.update({ where: { id: project.id }, data: { status: 'DISCOVERY' } }),
+    ],
+    { maxWait: 10000, timeout: 15000 },
+  );
+
+  return { session, ...buildProgress(plan, new Set()) };
 }
 
 export async function getSession(userId: string, projectId: string) {
-  await getProject(userId, projectId);
+  const project = await getProject(userId, projectId);
 
   const session = await prisma.discoverySession.findUnique({
     where: { projectId },
@@ -101,12 +131,13 @@ export async function getSession(userId: string, projectId: string) {
     throw ApiError.notFound('No discovery session for this project yet');
   }
 
+  const plan = resolvePlan(session, project);
   const answeredIds = new Set(session.answers.map((a) => a.questionId));
-  return { session, ...buildProgress(answeredIds) };
+  return { session, ...buildProgress(plan, answeredIds) };
 }
 
 export async function submitAnswer(userId: string, projectId: string, input: SubmitAnswerInput) {
-  await getProject(userId, projectId);
+  const project = await getProject(userId, projectId);
 
   const session = await prisma.discoverySession.findUnique({ where: { projectId } });
   if (!session) {
@@ -116,9 +147,11 @@ export async function submitAnswer(userId: string, projectId: string, input: Sub
     throw ApiError.badRequest(`This session is ${session.status.toLowerCase()} — answers are closed`);
   }
 
-  const question = getQuestion(input.questionId);
+  // The question must belong to THIS session's plan, not the global library.
+  const plan = resolvePlan(session, project);
+  const question = plan.find((q) => q.id === input.questionId);
   if (!question) {
-    throw ApiError.badRequest(`Unknown questionId: ${input.questionId}`);
+    throw ApiError.badRequest(`Unknown questionId for this session: ${input.questionId}`);
   }
 
   // Preserve any AI follow-up already attached to this answer; a revised
@@ -173,7 +206,7 @@ export async function submitAnswer(userId: string, projectId: string, input: Sub
   });
   // Surface the just-graded confidence on the submit response (also stored in
   // the JSONB, so GET /discovery returns it on every answer too).
-  return { ...buildProgress(new Set(answers.map((a) => a.questionId))), confidence, confidenceLabel };
+  return { ...buildProgress(plan, new Set(answers.map((a) => a.questionId))), confidence, confidenceLabel };
 }
 
 // The signature move: after a founder answers an anchor question, the AI
@@ -190,9 +223,10 @@ export async function generateFollowUp(userId: string, projectId: string, questi
     throw ApiError.badRequest('This session is closed — follow-ups are only for active interviews');
   }
 
-  const question = getQuestion(questionId);
+  const plan = resolvePlan(session, project);
+  const question = plan.find((q) => q.id === questionId);
   if (!question) {
-    throw ApiError.badRequest(`Unknown questionId: ${questionId}`);
+    throw ApiError.badRequest(`Unknown questionId for this session: ${questionId}`);
   }
 
   const answerRow = await prisma.discoveryAnswer.findUnique({
@@ -244,7 +278,7 @@ export async function generateFollowUp(userId: string, projectId: string, questi
 }
 
 export async function completeSession(userId: string, projectId: string) {
-  await getProject(userId, projectId);
+  const project = await getProject(userId, projectId);
 
   const session = await prisma.discoverySession.findUnique({
     where: { projectId },
@@ -257,8 +291,9 @@ export async function completeSession(userId: string, projectId: string) {
     throw ApiError.badRequest('This session is already closed');
   }
 
+  const plan = resolvePlan(session, project);
   const answeredIds = new Set(session.answers.map((a) => a.questionId));
-  const unanswered = discoveryQuestions.filter((q) => !answeredIds.has(q.id));
+  const unanswered = plan.filter((q) => !answeredIds.has(q.id));
   if (unanswered.length > 0) {
     throw ApiError.badRequest(
       `Cannot complete: ${unanswered.length} question(s) unanswered (next: "${unanswered[0]!.id}")`,

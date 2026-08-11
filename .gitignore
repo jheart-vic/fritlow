@@ -3,6 +3,7 @@ dist
 
 # Keep environment variables out of version control
 .env
+.env.test
 
 # Generated Prisma client (rebuilt with `npm run db:generate`)
 /src/generated/prisma

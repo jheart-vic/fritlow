@@ -64,8 +64,14 @@ Note on **Notifications** (P2 above) — still CHALLENGE BEFORE BUILDING: dashbo
 - [x] **Notifications (Phase 4)** — `Notification` model; `GET /notifications` (+unreadCount, unread filter), `PATCH /:id/read`, `POST /read-all`, `DELETE /:id`; `notify()` fire-and-forget wired to 5 triggers (support reply both ways, workspace invite, comment reply, comment-added, recommendation-created); polling delivery; E2E-verified.
 - [x] **P2: AI Chat** — SSE, personal per-project copilot; `POST /projects/:id/chat` (+conversations CRUD); GPT-5-verified.
 - [x] **Group Chat (Socket.io)** — workspace named channels, real-time `message:new` broadcast, JWT socket auth, per-member unread, @mention notifications; Redis adapter guarded by `REDIS_URL` (in-memory fallback, crash-safe). E2E-verified. **New stack: socket.io + ioredis.**
-- [ ] **Test harness (unit + integration)** ← NEXT — biggest DoD gap
+- [~] **Test harness (unit + integration)** ← IN PROGRESS (Session 20) — Vitest + Supertest scaffolded; auth + projects suites written (13 + ~11 tests). **Blocked on user:** create a separate Neon test DB, fill `.env.test`, run `npm run db:test:deploy` then `npm test`. Wiring verified (env injects, suites discovered/run — fail only on placeholder DB host).
 - [ ] Subscriptions/billing, audit logs (post-deploy)
+- [x] **Adaptive discovery — hybrid generated plan + expanded banks** (DONE Session 21, client-approved). Discovery is now per-project adaptive while deterministic once generated:
+  - **Hybrid plan:** `discovery.plan.ts` `generateQuestionPlan()` — at session start AI builds a tailored plan (seed = base plan for the project's category), persisted to new `DiscoverySession.questionPlan` JSONB, frozen after. Deterministic **fallback to `assembleBasePlan()`** on any AI failure/absence. Service refactored so start/get/answer/follow-up/complete run against the session plan; `total` is now per-project (dashboard fixed too).
+  - **Expanded banks:** `questions.ts` now 7 core modules (added `go_to_market`, `risks`) + `categoryPacks` (7 packs, fuzzy category match).
+  - **Health Score rubric stays FIXED** (comparability preserved) — health/blueprint/chat/recs read the transcript generically, needed no change.
+  - **Frontend contract:** responses now include a `questions` array (render from it, don't hardcode); IDs per-session. OpenAPI + frontend-guide §3 updated.
+- [x] **Blueprint SSE per-section events (Option B)** (DONE Session 21). The stream now emits `section` events `{key,title,status: writing|complete}` in section order (derived server-side by watching the streaming JSON keys — `createSectionTracker` in blueprint.service), so the frontend's section-progress checklist needs NO stream parsing. `delta`/`done`/`error` unchanged. Corrected the frontend on the real 8 fixed section keys (no "Technical Architecture"/"Go-to-Market" sections). Tracker unit-tested (4 tests). OpenAPI + guide §4 updated.
 
 ### Docs to keep current with any API change
 - OpenAPI `@openapi` blocks in `*.routes.ts` (the frontend contract, served at /docs)

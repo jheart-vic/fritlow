@@ -5,6 +5,55 @@
 
 ---
 
+## Session 21 — 2026-08-11
+
+### Done — Adaptive Discovery (hybrid plan + expanded banks) + Blueprint SSE per-section events
+Both client-approved this session ("the hybrid is okay, the 2 new is good … build them"; then "build option B").
+
+**1. Adaptive Discovery.** Discovery interview is now tailored per project instead of a fixed 5×2=10 skeleton.
+- **Expanded library** ([questions.ts](../src/modules/discovery/questions.ts)): 7 core modules now — added `go_to_market` + `risks` (plus extra core questions in problem/customer/business_model/mvp_focus). New `categoryPacks` (saas, marketplace, mobile_app, fintech, edtech, healthtech, social_network) with `matchCategoryPack()` fuzzy alias matching; `assembleBasePlan(category)` = core + matched pack; `CORE_QUESTION_COUNT`; `getQuestion` now searches core+packs. `discoveryQuestions` kept as alias.
+- **Hybrid generation** (new [discovery.plan.ts](../src/modules/discovery/discovery.plan.ts)): `generateQuestionPlan(userId, project)` — builds base plan, asks AI to tailor/reword/add (returns strict JSON array, defensively parsed, 6–20 clamp, unique ids), and **falls back to the base plan on ANY failure/absent AI** (so start never fails, tests need no AI). Logs source.
+- **Persistence + refactor:** new `DiscoverySession.questionPlan` JSONB (migration `20260811092506_add_discovery_question_plan`, applied to dev + test DBs). `discovery.service.ts`: `resolvePlan(session, project)` (stored plan, else base plan for legacy null); `buildProgress(plan, answered)` returns `{answered, total, nextQuestion, questions}`. `startSession` generates+stores the plan (AWAITs the AI, ~seconds; tx `maxWait/timeout` bumped). submit/follow-up/complete all resolve the question from the SESSION PLAN, not the global bank. `total` is now the plan length.
+- **Consumers unaffected:** health/blueprint/chat/recommendations read the answer transcript generically (module+questionText+text) — no change. **Dashboard** fixed: selects `questionPlan`, `total` = plan length (fallback `CORE_QUESTION_COUNT`). **Health Score rubric stays fixed** (comparability preserved) — the key constraint we agreed.
+- **Docs:** swagger `DiscoveryProgress` (+`questions`, dynamic `total`) + discovery routes @openapi + frontend-guide §3 ("don't hardcode the list; render `questions`; start has AI latency; IDs per-session").
+
+**2. Blueprint SSE per-section events (Option B).** Frontend mockup revealed two things: (a) their section list was WRONG (invented "Technical Architecture"/"Go-to-Market" sections; the real 8 are fixed in [blueprint.sections.ts](../src/modules/blueprints/blueprint.sections.ts): executive_summary, problem_statement, solution, target_audience, business_model, differentiation, mvp_scope, success_metrics); (b) the SSE stream sends only raw `delta` chunks — and those are **partial JSON** (model emits one JSON object), NOT headed markdown, so heading pattern-matching can't work.
+- Built server-side `section` events: `createSectionTracker(onSection)` in blueprint.service watches the accumulating stream buffer for each section KEY appearing as a JSON key (`"<key>":`), derives writing→complete from key order, emits only on change. `generateBlueprintStream` now takes an `onSection` cb; controller sends `event: section {key,title,status}`. `delta`/`done`/`error` unchanged. Frontend can drive the checklist with ZERO stream parsing.
+- **Tracker unit-tested** (`blueprint.test.ts`, 4 tests, pure/no-AI): writing→complete pairs in order; no duplicate transitions; finish() completes all even if stream cut off; prose mention of a key doesn't false-trigger. Passed 4/4.
+- Docs: blueprint stream @openapi + frontend-guide §4 (event table + the fixed 8-section order + "build the checklist from `section`, not `delta`").
+
+### Tests / infra note
+- New `discovery.test.ts` (7 tests, deterministic via the no-AI fallback plan). typecheck clean throughout.
+- **Neon test-DB latency is the pain point:** a full-suite run took 456s and 4 tests hit the 30s timeout (even a trivial project PATCH) — pure latency, not logic. Bumped `testTimeout`/`hookTimeout` to 60s in vitest.config.mts. (A local Postgres would make the suite ~100× faster — noted for later; no Docker on this machine.)
+
+### Next
+- Confirm the full suite is green at 60s, commit. Then broaden test coverage (workspaces RBAC, search, comments, settings) + decide mock-AI vs live-key for AI paths. Live end-to-end check of adaptive plan generation + section events against GPT-5 still worth doing (the fallback path is what's integration-tested; the AI path is unit-covered only for the parser/tracker).
+
+---
+
+## Session 20 — 2026-08-10
+
+### Done — Test harness scaffolded (biggest DoD gap, first slice)
+- **Stack: Vitest + Supertest** (integration-first — import the real exported `app`, drive it in-process, hit real Prisma → real Postgres, which is where this codebase's logic lives). New devDeps: `vitest`, `supertest`, `@types/supertest`, `dotenv-cli`.
+- **DB isolation (the crux):** tests run against a **SEPARATE Neon test DB**, never dev/prod. Mechanism: [src/config/env.ts](../src/config/env.ts) now loads `.env.test` when `NODE_ENV=test` (was hardcoded `dotenv/config` → `.env`). `.env.test` is gitignored (template committed as the file with placeholder URLs + a real generated JWT secret). `setup.ts` TRUNCATEs every public table (discovered from `pg_tables`, excludes `_prisma_migrations`) `RESTART IDENTITY CASCADE` in `beforeEach` → every test starts clean; `afterAll` disconnects Prisma.
+- **Config:** [vitest.config.mts](../vitest.config.mts) — `environment:node`, `env:{NODE_ENV:test}`, `setupFiles`, **`fileParallelism:false`** (single shared test DB → files must not run concurrently), `testTimeout/hookTimeout 30s` (Neon cold-start headroom). `.mts` extension to dodge the CJS/ESM config warning.
+- **Helpers** ([src/test/helpers.ts](../src/test/helpers.ts)): `uniqueEmail()`, `registerAndLogin()` (registers via API → flips `emailVerifiedAt` directly in DB to skip the email token → logs in → returns `{accessToken, workspaceId, ...}`), `authHeader()`.
+- **Suites written:** `src/modules/auth/auth.test.ts` (13 tests: register no-tokens + workspace created, dup 409, short-pw 400, unverified login 403, verified login 200 + rt cookie, wrong-pw 401, unknown-email 401, verify-email valid→200/reuse→400/unknown→400 [seeds a known-raw token via `hashToken`], refresh rotation invalidates old, /me 200/no-token 401/garbage 401). `src/modules/projects/project.test.ts` (~11: create DRAFT + createdBy embed, 401, 400, list+status filter, patch, delete→204 then 404, **tenancy 403 on read/update/delete by outsider**, outsider list empty, unknown id 404).
+- **Scripts:** `test`, `test:watch`, `db:test:deploy` (`dotenv -e .env.test -- prisma migrate deploy`).
+- **Verified:** typecheck clean; `npx vitest run` discovers both suites, injects `.env.test`, executes all tests — they fail ONLY at DB connect (placeholder host), proving the entire harness above the DB is correct.
+
+### GREEN — user supplied a `test_db` (separate Neon database on the same project endpoint); all 16 migrations applied via `db:test:deploy`; **`npm test` → 22/22 passing** (~126s, dominated by Neon latency + bcrypt).
+- **Fixed a real flake, not test-only:** register's `$transaction` hit `P2028: Unable to start a transaction in the given time` on Neon pooled cold-start (default maxWait 2s). Bumped to `{ maxWait: 10000, timeout: 15000 }` in [auth.service.ts](../src/modules/auth/auth.service.ts) `register` — same Neon-cold-start remedy Session 8 applied to the recommendations tx. Suite green after.
+- Note: user's `.env.test` uses the SAME pooled host for both `DATABASE_URL` and `DIRECT_DATABASE_URL` (both `-pooler`); `migrate deploy` worked anyway this time. If migrations later P1001 against it, swap DIRECT to the non-pooler host.
+
+### Decision — adaptive discovery (future work, NOT built this session)
+- User asked whether the fixed 5-module / 10-question discovery skeleton (2 per module) could be made per-project flexible. Explained *why* it's fixed today (the guided process IS the product; fixed spine powers health-score comparability, progress/resume, stable answer IDs; deterministic = free/offline/testable). **Decision: keep current fixed design for now; do NOT build yet — logged as a backlog TODO** (feature.md + CLAUDE.md). Chosen direction when built: **hybrid generated plan + expanded fixed banks** (AI generates a persisted per-project question plan at session start, runs deterministically after; grow `questions.ts`; keep the Health Score rubric fixed; fall back to the bank on AI failure; frontend must render questions from the API). See feature.md backlog entry for the full spec.
+
+### Next
+- Once green: broaden coverage to the deterministic modules (workspaces RBAC, search, comments, settings, discovery skeleton). AI-dependent paths (blueprint gen, health, recs, chat) need a mock-AI strategy or a gated live-key run — decide later. Then deploy to Render.
+
+---
+
 ## Session 19 — 2026-08-10
 
 ### Done — AI Chat (SSE) + Group Chat (Socket.io) — the last P2 + a new real-time feature

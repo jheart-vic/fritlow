@@ -85,7 +85,15 @@ blueprintRouter.get('/', blueprintController.get);
  *   post:
  *     tags: [Blueprint]
  *     summary: Generate the blueprint with live progress (Server-Sent Events)
- *     description: "Same behavior as POST /blueprint but the response is text/event-stream: `delta` events carry text chunks as the AI writes, then one `done` event with the persisted blueprint (or an `error` event). Consume with fetch + ReadableStream (EventSource can't send the Authorization header)."
+ *     description: >
+ *       Same behavior as POST /blueprint but the response is text/event-stream. Event types:
+ *       `delta` — raw text chunks as the AI writes (the underlying model streams ONE JSON object,
+ *       so these chunks are partial JSON, not headed markdown — do not parse them for structure);
+ *       `section` — per-section progress `{ key, title, status }` where status is `writing` then
+ *       `complete`, in section order, derived server-side so the UI can drive a section checklist
+ *       WITHOUT parsing the stream; `done` — one final event with the persisted blueprint; `error`
+ *       — on failure. The 8 section keys/titles are fixed (see the Blueprint response schema).
+ *       Consume with fetch + ReadableStream (EventSource can't send the Authorization header).
  *     security:
  *       - bearerAuth: []
  *     parameters:

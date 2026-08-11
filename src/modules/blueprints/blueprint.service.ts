@@ -133,15 +133,81 @@ export async function generateBlueprint(userId: string, projectId: string) {
   return blueprint;
 }
 
-// Streaming twin for the SSE endpoint: same validation, same persistence,
-// but the caller sees the model's text as it is written.
+// A per-section progress event for the SSE stream. status transitions
+// queued → writing → complete, letting the UI drive a section checklist
+// without parsing the raw stream itself.
+export interface SectionEvent {
+  key: string;
+  title: string;
+  status: 'writing' | 'complete';
+}
+
+// The model streams ONE JSON object whose keys are the section keys — so the
+// raw text is partial JSON, not markdown with headings. This tracker watches
+// the accumulating buffer for each section KEY appearing as a JSON key
+// (`"<key>":`) and derives progress from key order: once a later key appears,
+// every earlier section's value is finished. It emits only on status change,
+// in section order, so the frontend never has to parse anything.
+// Exported for unit testing (the streaming path that uses it needs a live AI
+// call; the detection logic itself is pure and worth testing on its own).
+export function createSectionTracker(onSection?: (e: SectionEvent) => void) {
+  const status = new Map<string, 'queued' | 'writing' | 'complete'>(
+    blueprintSectionDefs.map((d) => [d.key, 'queued']),
+  );
+  // Match the key only as a JSON key ("key" followed by a colon) so a section
+  // name mentioned inside prose can't trip the detector.
+  const matchers = blueprintSectionDefs.map((d) => ({
+    def: d,
+    re: new RegExp(`"${d.key}"\\s*:`),
+  }));
+
+  const set = (def: { key: string; title: string }, next: 'writing' | 'complete') => {
+    if (status.get(def.key) === next) return;
+    status.set(def.key, next);
+    onSection?.({ key: def.key, title: def.title, status: next });
+  };
+
+  return {
+    // Recompute statuses from the whole buffer. Idempotent — safe to call on
+    // every delta; only real transitions emit.
+    scan(buffer: string) {
+      let highest = -1;
+      matchers.forEach(({ re }, i) => {
+        if (re.test(buffer)) highest = Math.max(highest, i);
+      });
+      if (highest < 0) return;
+      blueprintSectionDefs.forEach((def, i) => {
+        if (i < highest) set(def, 'complete');
+        else if (i === highest) set(def, 'writing');
+      });
+    },
+    // Stream ended: everything that was written is now complete.
+    finish() {
+      blueprintSectionDefs.forEach((def) => set(def, 'complete'));
+    },
+  };
+}
+
+// Streaming twin for the SSE endpoint: same validation, same persistence, but
+// the caller sees the model's text as it is written (onDelta) AND per-section
+// progress (onSection) derived from the streaming JSON.
 export async function generateBlueprintStream(
   userId: string,
   projectId: string,
   onDelta: (text: string) => void,
+  onSection?: (e: SectionEvent) => void,
 ) {
   const { request } = await prepareGeneration(userId, projectId);
-  const raw = await aiService.generateTextStream(request, onDelta);
+
+  const tracker = createSectionTracker(onSection);
+  let buffer = '';
+  const raw = await aiService.generateTextStream(request, (text) => {
+    onDelta(text);
+    buffer += text;
+    tracker.scan(buffer);
+  });
+  tracker.finish(); // mark the final section complete before `done`
+
   const blueprint = await persistGenerated(projectId, raw);
   // Proactive Strategist refresh now that the blueprint exists (fire-and-forget).
   triggerRecommendations(userId, projectId, 'blueprint.generated');

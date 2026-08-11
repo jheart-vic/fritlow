@@ -57,3 +57,8 @@ Persistent project memory lives in [context/](context/). **At the start of every
 - Guard MVP scope — the six-module vision is large; V1 backend covers only what the five core screens need (see `summary.md`).
 - API changes must be reflected in the OpenAPI contract — it's what the frontend dev builds against.
 - Once scaffolding lands, add the actual build/dev/test commands to this file.
+
+## Planned / TODO (not yet built)
+
+- _(Adaptive discovery — hybrid generated plan + expanded banks — **DONE** Session 21. Discovery now generates a tailored, persisted `questionPlan` per project with a deterministic base-plan fallback; 7 core modules + category packs in `questions.ts`. See session.md S21.)_
+- (nothing else queued here — remaining V1 work is broader test coverage + post-deploy billing/audit-logs)
