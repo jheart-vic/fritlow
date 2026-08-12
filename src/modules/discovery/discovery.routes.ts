@@ -67,6 +67,64 @@ discoveryRouter.get('/', discoveryController.get);
 
 /**
  * @openapi
+ * /api/v1/projects/{projectId}/discovery/prefill:
+ *   post:
+ *     tags: [Discovery]
+ *     summary: Pre-fill the interview from the project's uploaded documents
+ *     description: >
+ *       Reads the project's uploaded PRD/MVP documents (see the Documents tag) and drafts
+ *       answers for the questions those documents genuinely answer. This does NOT skip
+ *       discovery — the drafts land in the normal interview for the founder to review and edit.
+ *       Every drafted answer carries `source: "document"` and `needsReview: true` in its
+ *       payload; submitting that question via `POST /answers` clears the flag, and
+ *       `POST /complete` is REJECTED while any drafted answer is still unreviewed.
+ *       Never overwrites an answer the founder wrote or already reviewed, so it is safe to
+ *       re-run after uploading a second document. Requires an ACTIVE session, at least one
+ *       document at status EXTRACTED, and a configured AI provider.
+ *       Expect a few seconds' latency.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Progress after pre-filling, plus what was filled
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 filled: { type: integer, example: 7, description: "Answers drafted by this call." }
+ *                 skipped: { type: integer, example: 5, description: "Questions still unanswered — the documents did not cover them." }
+ *                 documentsUsed:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: string, format: uuid }
+ *                       fileName: { type: string }
+ *                 answered: { type: integer }
+ *                 total: { type: integer }
+ *                 questions: { type: array, items: { type: object } }
+ *                 nextQuestion: { type: object, nullable: true }
+ *       400:
+ *         description: No extracted document, or the session is not active
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *       503:
+ *         description: AI not configured on this server
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ */
+discoveryRouter.post('/prefill', discoveryController.prefill);
+
+/**
+ * @openapi
  * /api/v1/projects/{projectId}/discovery/answers:
  *   post:
  *     tags: [Discovery]
@@ -269,7 +327,11 @@ discoveryRouter.post('/resume', discoveryController.resume);
  *   post:
  *     tags: [Discovery]
  *     summary: Complete the interview
- *     description: Only allowed once every anchor question has an answer. Marks the session COMPLETED.
+ *     description: >
+ *       Only allowed once every anchor question has an answer. Marks the session COMPLETED.
+ *       Also rejected while any answer drafted by `POST /discovery/prefill` is still
+ *       unreviewed (`needsReview: true`) — the founder must submit each drafted question
+ *       via `POST /answers` to confirm it first.
  *     security:
  *       - bearerAuth: []
  *     parameters:

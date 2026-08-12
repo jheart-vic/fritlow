@@ -3,7 +3,7 @@ import { prisma } from '../prisma';
 import { ApiError } from '../../utils/api-error';
 import { anthropicProvider } from './anthropic.provider';
 import { openaiProvider } from './openai.provider';
-import type { AiProvider } from './types';
+import type { AiAttachment, AiProvider } from './types';
 
 // The single entry point for AI in Fritlow. Feature services call
 // generateText(); this module picks the provider and logs every call
@@ -31,6 +31,20 @@ export interface GenerateTextParams {
   maxTokens?: number;
   userId?: string;
   projectId?: string;
+  // Images / PDFs to send alongside the prompt (see AiAttachment). Only the
+  // document-extraction path uses this today.
+  attachments?: AiAttachment[];
+}
+
+// The audit log stores prompts as text, and an attachment's base64 payload is
+// megabytes of it — logging that would bloat AiInteraction fast and put user
+// documents in a second place. Log what the call CARRIED, never the bytes.
+function describeAttachments(attachments: AiAttachment[] | undefined): string {
+  if (!attachments || attachments.length === 0) return '';
+  const summary = attachments
+    .map((a) => `${a.kind}/${a.mimeType} ${Math.round((a.base64.length * 3) / 4 / 1024)}KB`)
+    .join(', ');
+  return `\n\n[attachments: ${summary}]`;
 }
 
 export async function generateText(params: GenerateTextParams): Promise<string> {
@@ -48,7 +62,7 @@ export async function generateTextStream(
 
 type Executor = (
   provider: ReturnType<typeof getProvider>,
-  request: { system?: string; prompt: string; maxTokens?: number },
+  request: { system?: string; prompt: string; maxTokens?: number; attachments?: AiAttachment[] },
 ) => ReturnType<ReturnType<typeof getProvider>['complete']>;
 
 async function run(params: GenerateTextParams, execute: Executor): Promise<string> {
@@ -59,12 +73,14 @@ async function run(params: GenerateTextParams, execute: Executor): Promise<strin
   }
 
   const startedAt = Date.now();
+  const loggedPrompt = params.prompt + describeAttachments(params.attachments);
 
   try {
     const result = await execute(provider, {
       system: params.system,
       prompt: params.prompt,
       maxTokens: params.maxTokens,
+      attachments: params.attachments,
     });
 
     await prisma.aiInteraction.create({
@@ -73,7 +89,7 @@ async function run(params: GenerateTextParams, execute: Executor): Promise<strin
         provider: provider.name,
         model: result.model,
         systemPrompt: params.system,
-        userPrompt: params.prompt,
+        userPrompt: loggedPrompt,
         response: result.text,
         inputTokens: result.inputTokens,
         outputTokens: result.outputTokens,
@@ -96,7 +112,7 @@ async function run(params: GenerateTextParams, execute: Executor): Promise<strin
           // this provider is configured to use.
           model: provider.model,
           systemPrompt: params.system,
-          userPrompt: params.prompt,
+          userPrompt: loggedPrompt,
           latencyMs: Date.now() - startedAt,
           status: 'ERROR',
           error: err instanceof Error ? err.message : String(err),

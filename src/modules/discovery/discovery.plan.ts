@@ -56,11 +56,23 @@ function parsePlan(raw: string): PlanQuestion[] {
 // ones — but ALWAYS fall back to the base plan if the AI is unconfigured,
 // errors, or returns junk. So the interview is per-project when AI is available
 // and still complete/deterministic when it isn't.
+//
+// When the founder has already uploaded a PRD, an excerpt goes in too, so the
+// interview asks about what their document DOESN'T cover instead of parroting
+// questions it already answers.
 export async function generateQuestionPlan(
   userId: string,
   project: { id: string; name: string; oneLineIdea: string; category: string | null },
+  documents: { fileName: string; text: string }[] = [],
 ): Promise<PlanQuestion[]> {
   const basePlan = assembleBasePlan(project.category);
+
+  // Only an excerpt: the plan needs orientation, not the whole document (the
+  // pre-fill step is what reads it properly).
+  const documentExcerpt = documents
+    .map((d) => `--- ${d.fileName} ---\n${d.text}`)
+    .join('\n\n')
+    .slice(0, 20_000);
 
   try {
     const raw = await aiService.generateText({
@@ -92,6 +104,15 @@ export async function generateQuestionPlan(
         JSON.stringify(
           basePlan.map((q) => ({ id: q.id, module: q.module, text: q.text, hint: q.hint ?? '' })),
         ),
+        ...(documentExcerpt
+          ? [
+              '',
+              "The founder has already written this document. Keep every core module covered, but " +
+                'word the questions to push PAST what the document already settles — ask for the ' +
+                "detail it leaves vague rather than repeating what it states:",
+              documentExcerpt,
+            ]
+          : []),
       ].join('\n'),
     });
 

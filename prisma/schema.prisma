@@ -111,6 +111,7 @@ model User {
   groupChannelsCreated GroupChannel[]     @relation("GroupChannelCreator")
   groupMessages        GroupMessage[]     @relation("GroupMessageSender")
   groupChannelReads    GroupChannelRead[]
+  uploadedDocuments    ProjectDocument[]
 }
 
 // Tenancy root: every project will live inside a workspace.
@@ -199,6 +200,60 @@ model DiscoveryAnswer {
 
   // Answering the same question again replaces the answer (upsert target).
   @@unique([sessionId, questionId])
+}
+
+// Lifecycle of an uploaded PRD/MVP document. Extraction is slow enough
+// (seconds, and longer when a scan goes through the vision model) that the
+// frontend polls this instead of blocking on the upload response.
+enum DocumentStatus {
+  UPLOADED   // stored, extraction not started
+  EXTRACTING // extraction in flight
+  EXTRACTED  // extractedText is populated and usable
+  FAILED     // extraction failed; `error` says why
+}
+
+// How the text came out of the file — useful for the founder ("we read your
+// scan with vision") and for us when debugging a bad pre-fill.
+enum DocumentExtractionMethod {
+  PDF_TEXT // PDF with a real text layer (unpdf) — no AI cost
+  DOCX     // Word document (mammoth) — no AI cost
+  VISION   // image, or a PDF with no text layer, read by the AI vision path
+}
+
+// A PRD/MVP document a founder uploaded for a project. Fritlow extracts its
+// text and uses it to pre-fill the discovery interview, so the founder reviews
+// answers instead of retyping a document they already wrote.
+//
+// The file itself lives in Cloudinary (provenance / re-download); `extractedText`
+// is what everything downstream actually reads.
+model ProjectDocument {
+  id        String         @id @default(uuid())
+  fileName  String
+  mimeType  String
+  sizeBytes Int
+  // Cloudinary secure URL + public_id. Null when storage isn't configured —
+  // extraction still works, we just can't offer the original back.
+  fileUrl   String?
+  publicId  String?
+  status    DocumentStatus @default(UPLOADED)
+  // Populated once status is EXTRACTED. @db.Text because a long PRD blows past
+  // Postgres' default varchar sizing.
+  extractedText String?                   @db.Text
+  extractionMethod DocumentExtractionMethod?
+  // How many pages the vision path actually read (it's capped — see
+  // document.extract.ts), so we can tell the founder what was skipped.
+  pagesRead Int?
+  // Failure reason when status is FAILED — shown to the founder verbatim.
+  error     String?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  project      Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId    String
+  uploadedBy   User    @relation(fields: [uploadedById], references: [id])
+  uploadedById String
+
+  @@index([projectId, createdAt])
 }
 
 enum BlueprintStatus {
@@ -595,6 +650,7 @@ model Project {
   blueprintSectionVersions BlueprintSectionVersion[]
   comments               Comment[]
   chatConversations      ChatConversation[]
+  documents              ProjectDocument[]
 
   @@index([workspaceId])
 }

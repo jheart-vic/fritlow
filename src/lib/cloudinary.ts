@@ -54,6 +54,57 @@ export async function uploadAvatar(buffer: Buffer, userId: string): Promise<stri
   });
 }
 
+// Uploads an uploaded PRD/MVP document and returns its URL + public_id.
+//
+// resource_type: 'raw' is the key difference from avatars: it tells Cloudinary
+// to store the bytes untouched rather than treating them as an image to
+// transform. `documentId` gives each upload its own object (unlike avatars,
+// which overwrite per user — a project can have several documents).
+//
+// This is provenance storage only: the extracted TEXT is what the rest of
+// Fritlow reads, so a failure here must not lose the upload — callers treat it
+// as best-effort and keep going with a null fileUrl.
+export async function uploadDocument(
+  buffer: Buffer,
+  documentId: string,
+  fileName: string,
+): Promise<{ url: string; publicId: string }> {
+  ensureConfigured();
+  return new Promise<{ url: string; publicId: string }>((resolve, reject) => {
+    cloudinary.uploader
+      .upload_stream(
+        {
+          folder: 'fritlow/documents',
+          public_id: documentId,
+          resource_type: 'raw',
+          // Keeps the original name on the download URL so the founder gets
+          // back "my-prd.pdf", not a uuid.
+          filename_override: fileName,
+          use_filename: false,
+        },
+        (error, result) => {
+          if (error || !result) {
+            reject(new ApiError(502, 'Document storage failed — please try again'));
+            return;
+          }
+          resolve({ url: result.secure_url, publicId: result.public_id });
+        },
+      )
+      .end(buffer);
+  });
+}
+
+// Removes a stored document (best-effort — the DB row is the source of truth).
+export async function deleteDocument(publicId: string): Promise<void> {
+  if (!isCloudinaryConfigured()) return;
+  ensureConfigured();
+  try {
+    await cloudinary.uploader.destroy(publicId, { resource_type: 'raw' });
+  } catch {
+    // ignore — deleting the row is what matters to the user
+  }
+}
+
 // Removes a user's avatar from Cloudinary (best-effort — a failure here should
 // not block clearing the DB field).
 export async function deleteAvatar(userId: string): Promise<void> {

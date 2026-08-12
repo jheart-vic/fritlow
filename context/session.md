@@ -5,6 +5,31 @@
 
 ---
 
+## Session 22 — 2026-08-12
+
+### Done — Document upload (PRD/MVP) → discovery pre-fill
+Client-requested: "we want users to be able to upload their projects prd or mvp in image, pdf, docx so fritlow reads that and works on it", then "pre-fill before building, just like fritlow's normal workflow", then "vision only", then "build both [providers] with openai as the real one now and anthropic there fully wired too".
+
+- **New module `src/modules/documents/`** + `ProjectDocument` model (migration `add_project_documents`, applied). Upload/list/get/delete under `/api/v1/projects/:projectId/documents`. Upload returns **202** and extraction runs fire-and-forget; the frontend polls `status`.
+- **Extraction, cheapest path first** (`document.extract.ts`): PDF text layer → `unpdf`; `.docx` → `mammoth` (converted HTML→markdown by hand so headings survive — this version of mammoth has no `convertToMarkdown`); images and text-layer-less PDFs → **AI vision**. Both providers accept a PDF directly, so there is **no OCR and no page-rasterising** anywhere in the codebase (this removed the canvas dependency the plan originally assumed). Scanned PDFs capped at 30 pages on cost grounds; a blank/illegible transcription fails rather than storing a useless doc.
+- **AI layer carries attachments now**: `AiCompletionRequest.attachments` (`{kind:'image'|'pdf', mimeType, base64}`), implemented in **both** providers + threaded through `ai.service.run()`. The audit log records attachment *metadata* only — base64 in `AiInteraction.userPrompt` would have bloated the table fast.
+- **Pre-fill**: `POST /projects/:id/discovery/prefill` (`discovery.prefill.ts`) drafts answers for questions the document genuinely answers, instructed to omit rather than guess. Drafts carry `source:'document'` + `needsReview:true`; submitting the question clears it; **`POST /complete` is blocked while any draft is unreviewed**. `generateQuestionPlan` also gets a document excerpt so the interview probes past what the PRD settles.
+- **Account deletion** reassigns `ProjectDocument.uploadedById` to the sentinel (new FK would otherwise block the delete).
+- **Verified live against GPT-5**: text-layer PDF → `PDF_TEXT` with correct text (zero AI cost); no-text PDF → `VISION`, full OpenAI round-trip, returned `[illegible]` for a blank page (correct). Typecheck clean; app wiring smoke-tested (no circular-import issue between discovery ↔ documents).
+
+### Decisions
+- **Vision over OCR** (client choice): tesseract is useless on whiteboard photos and messy scans, and both providers read images/PDFs natively — so no OCR dependency at all.
+- **Pre-fill feeds the interview, never bypasses it.** The `needsReview` gate on `/complete` is the guardrail: a founder must look at every drafted answer before it can become a blueprint.
+- **Both providers wired at parity**, OpenAI as the live one. Anthropic's attachment path is implemented but **untested** (no credits) — same standing as the rest of the AI layer.
+- Cloudinary `resource_type: 'raw'` for the original files (DO Spaces still unwired); storage is best-effort — the extracted text is what Fritlow actually reads.
+
+### Next
+- Live-test the **Anthropic** attachment path when credits exist (and the still-pending blueprint/health-score Anthropic paths).
+- Test coverage for the documents module + pre-fill is still blocked on the Neon test DB (`.env.test`) — same blocker as Session 20.
+- New deps: `unpdf`, `mammoth`.
+
+---
+
 ## Session 21 — 2026-08-11
 
 ### Done — Adaptive Discovery (hybrid plan + expanded banks) + Blueprint SSE per-section events

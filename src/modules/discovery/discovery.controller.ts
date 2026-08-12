@@ -18,6 +18,11 @@ export async function get(req: Request, res: Response) {
   res.status(200).json(result);
 }
 
+export async function prefill(req: Request, res: Response) {
+  const result = await discoveryService.prefillFromDocuments(req.user!.id, projectId(req));
+  res.status(200).json(result);
+}
+
 export async function answer(req: Request, res: Response) {
   const result = await discoveryService.submitAnswer(req.user!.id, projectId(req), req.body);
   res.status(200).json(result);
