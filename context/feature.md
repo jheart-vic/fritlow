@@ -73,6 +73,14 @@ Note on **Notifications** (P2 above) — still CHALLENGE BEFORE BUILDING: dashbo
   - **Frontend contract:** responses now include a `questions` array (render from it, don't hardcode); IDs per-session. OpenAPI + frontend-guide §3 updated.
 - [x] **Blueprint SSE per-section events (Option B)** (DONE Session 21). The stream now emits `section` events `{key,title,status: writing|complete}` in section order (derived server-side by watching the streaming JSON keys — `createSectionTracker` in blueprint.service), so the frontend's section-progress checklist needs NO stream parsing. `delta`/`done`/`error` unchanged. Corrected the frontend on the real 8 fixed section keys (no "Technical Architecture"/"Go-to-Market" sections). Tracker unit-tested (4 tests). OpenAPI + guide §4 updated.
 
+- [x] **Document upload → discovery pre-fill** (DONE 2026-08-12, client-requested). Founders upload an existing PRD/MVP (PDF, `.docx`, or an image/photo) and Fritlow drafts discovery answers from it — **into the normal interview, not around it**:
+  - **New module** `src/modules/documents/` + `ProjectDocument` model (migration `add_project_documents`). `POST/GET /projects/:id/documents`, `GET/DELETE /:documentId`. Upload returns **202**; extraction runs fire-and-forget and the frontend polls `status` (UPLOADED → EXTRACTING → EXTRACTED | FAILED).
+  - **Three extraction paths, cheapest first:** PDF text layer via `unpdf`, `.docx` via `mammoth` (HTML → markdown so headings survive), and **AI vision** for images + PDFs with no text layer. No OCR and no page-rasterising: both providers take the file directly. Scanned PDFs capped at **30 pages** on cost grounds.
+  - **AI layer now carries attachments** — `AiCompletionRequest.attachments` (`{kind: 'image'|'pdf', mimeType, base64}`), implemented in **both** providers. The audit log records attachment metadata, never the base64.
+  - **Pre-fill:** `POST /projects/:id/discovery/prefill` drafts answers for the questions the document genuinely answers (instructed to omit rather than guess). Drafts carry `source: 'document'` + `needsReview: true` in the answer JSONB; submitting the question clears the flag, and **`POST /complete` is blocked while any draft is unreviewed** — a document can never silently become a blueprint.
+  - **Plan generation reads the document too**, so the interview probes what the PRD leaves open instead of re-asking it.
+  - **Verified live against GPT-5**: text-layer PDF → `PDF_TEXT` (zero AI cost), no-text PDF → `VISION` round-trip OK. Anthropic attachment path is fully wired but **untested** (no credits) — same status as the rest of the AI layer.
+
 ### Docs to keep current with any API change
 - OpenAPI `@openapi` blocks in `*.routes.ts` (the frontend contract, served at /docs)
 - `docs/frontend-api-guide.md` (all endpoints + Postman walkthrough)

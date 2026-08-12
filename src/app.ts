@@ -14,6 +14,7 @@ import { commentRouter, commentSectionRouter } from './modules/comments/comment.
 import { dashboardRouter } from './modules/dashboard/dashboard.routes';
 import { decisionRouter } from './modules/decisions/decision.routes';
 import { discoveryRouter } from './modules/discovery/discovery.routes';
+import { documentRouter } from './modules/documents/document.routes';
 import { exportRouter } from './modules/exports/export.routes';
 import { groupChatRouter } from './modules/group-chat/group-chat.routes';
 import { healthScoreRouter } from './modules/health/health.routes';
@@ -64,6 +65,7 @@ app.get('/docs.json', (_req, res) => res.json(swaggerSpec));
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/projects', projectRouter);
 app.use('/api/v1/projects/:projectId/discovery', discoveryRouter);
+app.use('/api/v1/projects/:projectId/documents', documentRouter);
 app.use('/api/v1/projects/:projectId/blueprint', blueprintRouter);
 app.use('/api/v1/projects/:projectId/decisions', decisionRouter);
 app.use('/api/v1/projects/:projectId/recommendations', recommendationRouter);

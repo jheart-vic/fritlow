@@ -149,6 +149,9 @@ export async function deleteAccount(userId: string, input: DeleteAccountInput): 
       await tx.comment.updateMany({ where: { authorId: userId }, data: { authorId: sentinelId } });
       await tx.blueprintSectionVersion.updateMany({ where: { editedById: userId }, data: { editedById: sentinelId } });
       await tx.export.updateMany({ where: { createdById: userId }, data: { createdById: sentinelId } });
+      // Uploaded PRD/MVP documents in shared workspaces — the extracted text is
+      // still feeding teammates' discovery, so keep the row and swap the author.
+      await tx.projectDocument.updateMany({ where: { uploadedById: userId }, data: { uploadedById: sentinelId } });
       await tx.workspaceInvitation.updateMany({ where: { invitedById: userId }, data: { invitedById: sentinelId } });
       // Support messages the user sent as STAFF live in other people's threads —
       // reassign them. (Their own customer threads cascade via customerId; the

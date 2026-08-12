@@ -86,7 +86,8 @@ The signature feature. **The interview is now tailored per project (adaptive dis
 | `GET /` | — | **200** (below) | The resume screen: session + all answers + progress + next question + the full `questions` plan |
 | `POST /answers` | `{ questionId, answer, followUpAnswer? }` | **200** `{ answered, total, nextQuestion, questions, confidence, confidenceLabel }` | Upsert — re-answering the same question replaces it. `confidence` (0–100) + `confidenceLabel` (LOW/MEDIUM/HIGH) are the **AI confidence meter** for the answer just submitted, or `null` if the server has no AI key. 400 (unknown `questionId` for this session, or session closed) |
 | `POST /answers/:questionId/follow-up` | — | **200** `{ questionId, followUp }` | **AI Challenge Mode**: generates one probing follow-up question about this answer. 400 if question unanswered; 503 if server has no AI key. Reply by re-POSTing `/answers` with `followUpAnswer` |
-| `POST /complete` | — | **200** | Only when every question in the plan is answered — else 400 with a clear message |
+| `POST /prefill` | — | **200** `{ filled, skipped, documentsUsed, answered, total, questions, nextQuestion }` | Drafts answers from the project's uploaded PRD/MVP documents — see **§3b**. 400 if no extracted document or session not ACTIVE; 503 without an AI key |
+| `POST /complete` | — | **200** | Only when every question in the plan is answered **and** no pre-filled answer is still awaiting review — else 400 with a clear message |
 
 `GET /` response shape:
 
@@ -141,6 +142,80 @@ GET /api/v1/projects/{id}/discovery
 ```
 
 Note the two shapes for the same data: step 2 returns the follow-up as a flat `{ questionId, followUp }` string; on read-back (step 4) it's nested at `answer.followUp.question` with the reply at `answer.followUp.answer` (`null` until step 3). Re-running step 2 replaces the follow-up and resets its stored reply to `null`.
+
+---
+
+## 3b. Documents — upload a PRD/MVP and pre-fill discovery
+
+Founders who already wrote a PRD shouldn't retype it. They upload the file, Fritlow extracts its text, and the AI **drafts answers into the normal discovery interview** — which the founder then reviews and edits as usual. The document never bypasses discovery, and a drafted answer never becomes final until the founder confirms it.
+
+### Upload — `/api/v1/projects/:projectId/documents`
+
+| Method + path | Body | Success | Notes |
+|---|---|---|---|
+| `POST /` | `multipart/form-data`, field **`document`** | **202** `{ document }` | PDF, Word `.docx`, or image (png/jpeg/webp/gif). Max **20 MB**. Returns immediately — extraction runs in the background |
+| `GET /` | — | **200** `{ documents }` | Summary rows, newest first. **No `extractedText`** here |
+| `GET /:documentId` | — | **200** `{ document }` | The polling endpoint, and the only one that returns `extractedText` |
+| `DELETE /:documentId` | — | **204** | Removes the row + stored file. Answers already pre-filled from it are left alone |
+
+**The upload is asynchronous — this is the part to get right.** `POST` returns **202** with `status: "UPLOADED"`. Poll `GET /:documentId` until `status` is `EXTRACTED` (ready) or `FAILED` (`error` holds a message safe to show verbatim). Typical: a PDF/`.docx` lands in about a second; an image or scanned PDF takes longer because the AI reads it.
+
+```json
+{
+  "document": {
+    "id": "…", "fileName": "fritlow-prd.pdf", "mimeType": "application/pdf",
+    "sizeBytes": 248311, "fileUrl": "https://res.cloudinary.com/…",
+    "status": "EXTRACTED",          // UPLOADED → EXTRACTING → EXTRACTED | FAILED
+    "extractionMethod": "PDF_TEXT", // PDF_TEXT | DOCX | VISION
+    "pagesRead": 6, "error": null,
+    "uploadedById": "…", "createdAt": "…", "updatedAt": "…"
+  }
+}
+```
+
+`extractionMethod` is worth surfacing: `VISION` means the file had no text layer (a scan or a photo) and the AI read it as images — good moment to tell the founder "we read your scan, double-check it". Scanned PDFs over **30 pages** are rejected on cost grounds, with a message saying so.
+
+### Pre-fill — `POST /api/v1/projects/:projectId/discovery/prefill`
+
+Requires an **ACTIVE discovery session** and at least one document at `EXTRACTED`. Takes a few seconds (one AI call).
+
+```
+# 1. Upload, then poll until EXTRACTED
+POST /api/v1/projects/{id}/documents            (multipart, field "document")
+→ 202 { document: { id: "doc_…", status: "UPLOADED" } }
+GET  /api/v1/projects/{id}/documents/doc_…
+→ 200 { document: { status: "EXTRACTED", extractionMethod: "PDF_TEXT" } }
+
+# 2. Start discovery (if not started) — the plan is tailored around the document too
+POST /api/v1/projects/{id}/discovery
+
+# 3. Pre-fill
+POST /api/v1/projects/{id}/discovery/prefill
+→ 200 { "filled": 7, "skipped": 5, "documentsUsed": [ { "id": "doc_…", "fileName": "fritlow-prd.pdf" } ],
+         "answered": 7, "total": 12, "questions": [ … ], "nextQuestion": { … } }
+```
+
+`filled` = answers drafted by this call. `skipped` = questions still unanswered because the document didn't cover them — the founder answers those normally. The AI is instructed to **omit** rather than guess, so a low `filled` on a thin document is correct behaviour, not a bug.
+
+### Reviewing drafted answers — the flow that matters
+
+Pre-filled answers appear in the normal `GET /discovery` response, with two extra fields on the answer JSONB:
+
+```json
+"answer": {
+  "text": "Early-stage solo founders shipping their first product.",
+  "confidence": 88, "confidenceLabel": "HIGH",
+  "source": "document",              // absent when the founder typed it
+  "sourceDocumentId": "doc_…",
+  "needsReview": true                // ← still waiting on the founder
+}
+```
+
+- **Badge every `source: "document"` answer** ("drafted from your PRD") so the founder knows what to check.
+- **`needsReview: true` means unconfirmed.** Submitting that question via `POST /answers` (edited or unchanged) clears the flag — that submit *is* the review step.
+- **`POST /complete` returns 400 while any `needsReview: true` answer remains**, naming how many are left and the next `questionId`. Route the founder to that question rather than showing a generic error.
+
+Re-running `/prefill` after a second upload is safe: it fills gaps and refreshes earlier drafts, but never touches an answer the founder wrote or already reviewed.
 
 ---
 

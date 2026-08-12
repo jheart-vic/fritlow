@@ -4,7 +4,9 @@ import * as aiService from '../../lib/ai/ai.service';
 import { ApiError } from '../../utils/api-error';
 import { getProject } from '../projects/project.service';
 import { triggerRecommendations } from '../recommendations/recommendation.service';
+import { getExtractedDocuments } from '../documents/document.service';
 import { generateQuestionPlan, type PlanQuestion } from './discovery.plan';
+import { generatePrefill } from './discovery.prefill';
 import { assembleBasePlan, planModules } from './questions';
 import type { SubmitAnswerInput } from './discovery.schemas';
 
@@ -20,9 +22,29 @@ interface AnswerPayload {
     question: string;
     answer: string | null;
   };
+  // Provenance. Absent means the founder typed this answer themselves.
+  // 'document' means it was drafted from an uploaded PRD/MVP and is waiting on
+  // the founder's review — `needsReview` flips to false the moment they submit
+  // the question themselves, and completing the interview is blocked until
+  // every drafted answer has been through that.
+  source?: 'document';
+  sourceDocumentId?: string;
+  needsReview?: boolean;
 }
 
 type ConfidenceLabel = 'LOW' | 'MEDIUM' | 'HIGH';
+
+// The follow-up endpoints rewrite an answer's JSONB wholesale; this carries the
+// document provenance across so a follow-up doesn't quietly erase it.
+function provenanceOf(payload: AnswerPayload) {
+  return payload.source
+    ? {
+        source: payload.source,
+        sourceDocumentId: payload.sourceDocumentId,
+        needsReview: payload.needsReview ?? false,
+      }
+    : {};
+}
 
 function confidenceBand(score: number): ConfidenceLabel {
   if (score >= 70) return 'HIGH';
@@ -104,7 +126,11 @@ export async function startSession(userId: string, projectId: string) {
   // makes one AI call, ~seconds). This is best-effort: generateQuestionPlan
   // always resolves — to the deterministic base plan if AI is unavailable — so
   // starting an interview never fails because of the model.
-  const plan = await generateQuestionPlan(userId, project);
+  //
+  // If the founder uploaded a PRD before starting, it goes in as context so the
+  // interview probes what the document leaves open rather than re-asking it.
+  const documents = await getExtractedDocuments(project.id);
+  const plan = await generateQuestionPlan(userId, project, documents);
 
   // Creating the session moves the project into DISCOVERY — one transaction,
   // so the session and the status flip can't disagree. The plan is stored on
@@ -178,6 +204,16 @@ export async function submitAnswer(userId: string, projectId: string, input: Sub
     text: input.answer,
     confidence,
     confidenceLabel,
+    // Submitting a question IS the review step for a document-drafted answer:
+    // the founder has now seen it and either kept or rewrote it. We keep the
+    // provenance (so the UI can still show "from your PRD") but clear the flag.
+    ...(existingPayload.source
+      ? {
+          source: existingPayload.source,
+          sourceDocumentId: existingPayload.sourceDocumentId,
+          needsReview: false,
+        }
+      : {}),
     ...(existingPayload.followUp
       ? {
           followUp: {
@@ -209,6 +245,99 @@ export async function submitAnswer(userId: string, projectId: string, input: Sub
   // Surface the just-graded confidence on the submit response (also stored in
   // the JSONB, so GET /discovery returns it on every answer too).
   return { ...buildProgress(plan, new Set(answers.map((a) => a.questionId))), confidence, confidenceLabel };
+}
+
+// Pre-fill the interview from the project's uploaded PRD/MVP documents.
+//
+// This does NOT skip discovery — it drafts answers into the same session the
+// founder then walks through, reviews, and edits. Drafted answers are marked
+// `needsReview` and completing the interview is blocked until each has been
+// submitted by the founder, so a document can never silently become a blueprint.
+//
+// Re-runnable: a second document (or a re-run after a failed one) fills in
+// questions still unanswered and refreshes earlier drafts, but NEVER overwrites
+// an answer the founder wrote or reviewed themselves.
+export async function prefillFromDocuments(userId: string, projectId: string) {
+  const project = await getProject(userId, projectId);
+
+  const session = await prisma.discoverySession.findUnique({
+    where: { projectId },
+    include: { answers: true },
+  });
+  if (!session) {
+    throw ApiError.notFound('No discovery session for this project yet');
+  }
+  if (session.status !== 'ACTIVE') {
+    throw ApiError.badRequest(
+      `This session is ${session.status.toLowerCase()} — answers are closed`,
+    );
+  }
+
+  const documents = await getExtractedDocuments(projectId);
+  if (documents.length === 0) {
+    throw ApiError.badRequest(
+      'No readable document on this project yet. Upload one and wait for its status to become EXTRACTED.',
+    );
+  }
+
+  const plan = resolvePlan(session, project);
+
+  // Questions the founder has personally answered are off-limits — their own
+  // words always win over anything we draft from a document.
+  const ownedByFounder = new Set(
+    session.answers
+      .filter((a) => {
+        const payload = a.answer as unknown as AnswerPayload;
+        return payload.source !== 'document' || payload.needsReview === false;
+      })
+      .map((a) => a.questionId),
+  );
+
+  const drafted = await generatePrefill(userId, project, plan, documents);
+  const applicable = drafted.filter((d) => !ownedByFounder.has(d.questionId));
+
+  // Attribute the draft to the newest document — with several uploaded we
+  // can't tell which one a given answer came from, and the newest is the one
+  // the founder just added.
+  const sourceDocumentId = documents[0]!.id;
+
+  for (const draft of applicable) {
+    const question = plan.find((q) => q.id === draft.questionId)!;
+    const payload: AnswerPayload = {
+      text: draft.answer,
+      confidence: draft.confidence,
+      confidenceLabel: draft.confidence === null ? null : confidenceBand(draft.confidence),
+      source: 'document',
+      sourceDocumentId,
+      needsReview: true,
+    };
+
+    await prisma.discoveryAnswer.upsert({
+      where: { sessionId_questionId: { sessionId: session.id, questionId: question.id } },
+      create: {
+        sessionId: session.id,
+        questionId: question.id,
+        questionText: question.text,
+        module: question.module,
+        answer: { ...payload },
+      },
+      update: { answer: { ...payload }, answeredAt: new Date() },
+    });
+  }
+
+  const answers = await prisma.discoveryAnswer.findMany({
+    where: { sessionId: session.id },
+    select: { questionId: true },
+  });
+
+  return {
+    ...buildProgress(plan, new Set(answers.map((a) => a.questionId))),
+    // What the founder needs to know: how many answers are waiting on them,
+    // and how many questions the document simply didn't cover.
+    filled: applicable.length,
+    skipped: plan.length - answers.length,
+    documentsUsed: documents.map((d) => ({ id: d.id, fileName: d.fileName })),
+  };
 }
 
 // The signature move: after a founder answers an anchor question, the AI
@@ -271,6 +400,7 @@ export async function generateFollowUp(userId: string, projectId: string, questi
         text: payload.text,
         confidence: payload.confidence ?? null,
         confidenceLabel: payload.confidenceLabel ?? null,
+        ...provenanceOf(payload),
         followUp: { question: followUpQuestion, answer: null },
       },
     },
@@ -311,6 +441,7 @@ export async function skipFollowUp(userId: string, projectId: string, questionId
         text: payload.text,
         confidence: payload.confidence ?? null,
         confidenceLabel: payload.confidenceLabel ?? null,
+        ...provenanceOf(payload),
       },
     },
   });
@@ -359,7 +490,7 @@ export async function completeSession(userId: string, projectId: string) {
 
   const session = await prisma.discoverySession.findUnique({
     where: { projectId },
-    include: { answers: { select: { questionId: true } } },
+    include: { answers: true },
   });
   if (!session) {
     throw ApiError.notFound('No discovery session for this project yet');
@@ -374,6 +505,19 @@ export async function completeSession(userId: string, projectId: string) {
   if (unanswered.length > 0) {
     throw ApiError.badRequest(
       `Cannot complete: ${unanswered.length} question(s) unanswered (next: "${unanswered[0]!.id}")`,
+    );
+  }
+
+  // Answers we drafted from an uploaded document are not the founder's answers
+  // until the founder has actually looked at them. Blocking here is the whole
+  // point of pre-fill going through the interview instead of around it.
+  const unreviewed = session.answers.filter(
+    (a) => (a.answer as unknown as AnswerPayload).needsReview === true,
+  );
+  if (unreviewed.length > 0) {
+    throw ApiError.badRequest(
+      `Cannot complete: ${unreviewed.length} answer(s) drafted from your document still need your review ` +
+        `(next: "${unreviewed[0]!.questionId}"). Open each one and submit it to confirm.`,
     );
   }
 

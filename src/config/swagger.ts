@@ -64,6 +64,44 @@ export const swaggerSpec = swaggerJsdoc({
             updatedAt: { type: 'string', format: 'date-time' },
           },
         },
+        ProjectDocument: {
+          type: 'object',
+          description:
+            "A PRD/MVP document uploaded to a project. Fritlow extracts its text and uses it to " +
+            'pre-fill the discovery interview. `extractedText` is returned only by the ' +
+            'single-document endpoint, never in the list.',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            fileName: { type: 'string', example: 'fritlow-prd-v2.pdf' },
+            mimeType: { type: 'string', example: 'application/pdf' },
+            sizeBytes: { type: 'integer', example: 248311 },
+            fileUrl: {
+              type: 'string',
+              nullable: true,
+              description: 'Download URL for the original file. null when file storage is not configured.',
+            },
+            status: {
+              type: 'string',
+              enum: ['UPLOADED', 'EXTRACTING', 'EXTRACTED', 'FAILED'],
+              description: 'Poll until EXTRACTED (or FAILED). Only EXTRACTED documents feed pre-fill.',
+            },
+            extractionMethod: {
+              type: 'string',
+              nullable: true,
+              enum: ['PDF_TEXT', 'DOCX', 'VISION'],
+              description: 'How the text was read. VISION = the AI read it as images (a scan or photo).',
+            },
+            pagesRead: { type: 'integer', nullable: true },
+            error: {
+              type: 'string',
+              nullable: true,
+              description: 'Why extraction failed — safe to show the founder verbatim.',
+            },
+            uploadedById: { type: 'string', format: 'uuid' },
+            createdAt: { type: 'string', format: 'date-time' },
+            updatedAt: { type: 'string', format: 'date-time' },
+          },
+        },
         WorkspaceMembership: {
           type: 'object',
           description: "A workspace plus the caller's role in it.",

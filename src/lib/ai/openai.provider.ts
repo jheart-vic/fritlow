@@ -47,9 +47,27 @@ export const openaiProvider: AiProvider = {
   },
 };
 
+// Attachments on the Responses API: `input` becomes a list of typed content
+// parts instead of a bare string. Images go in as `input_image` with a data
+// URL; PDFs as `input_file` (the model reads both the text and the page images,
+// so a scan needs no OCR from us). Files come first so the model reads them
+// before the instruction — same ordering rule as the Anthropic path.
+function toContentParts(request: AiCompletionRequest) {
+  const parts = (request.attachments ?? []).map((attachment) => {
+    const dataUrl = `data:${attachment.mimeType};base64,${attachment.base64}`;
+    return attachment.kind === 'pdf'
+      ? { type: 'input_file' as const, filename: 'document.pdf', file_data: dataUrl }
+      : { type: 'input_image' as const, image_url: dataUrl, detail: 'auto' as const };
+  });
+
+  return [...parts, { type: 'input_text' as const, text: request.prompt }];
+}
+
 // Return type is inferred (not annotated): the object omits `stream`, which
 // lets create() resolve to the non-streaming overload and stream() accept it.
 function buildParams(request: AiCompletionRequest) {
+  const hasAttachments = (request.attachments?.length ?? 0) > 0;
+
   return {
     model: env.OPENAI_MODEL,
     // GPT-5 is a reasoning model; reasoning tokens are billed as output and
@@ -57,7 +75,10 @@ function buildParams(request: AiCompletionRequest) {
     max_output_tokens: request.maxTokens ?? 2048,
     reasoning: { effort: env.OPENAI_REASONING_EFFORT },
     ...(request.system ? { instructions: request.system } : {}),
-    input: request.prompt,
+    // Keep the plain-string form when there are no attachments (the common case).
+    input: hasAttachments
+      ? [{ role: 'user' as const, content: toContentParts(request) }]
+      : request.prompt,
   };
 }
 
