@@ -14,6 +14,7 @@ export async function exportBlueprint(req: Request, res: Response) {
     req.user!.id,
     req.params.projectId as string,
     parsed.data,
+    { includeTranscript: req.query.includeTranscript === 'true' },
   );
 
   res

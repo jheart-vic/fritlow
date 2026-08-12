@@ -3,11 +3,18 @@ import { ApiError } from '../../utils/api-error';
 import { getProject } from '../projects/project.service';
 import type { CreateDecisionInput, UpdateDecisionInput } from './decision.schemas';
 
+// Embed the creator on every decision response (same shape as Project.createdBy)
+// so the Decision Log can show "👤 Name" without a second request.
+const createdBySelect = {
+  createdBy: { select: { id: true, fullName: true, email: true, avatarUrl: true } },
+} as const;
+
 export async function createDecision(userId: string, projectId: string, input: CreateDecisionInput) {
   await getProject(userId, projectId);
 
   return prisma.decisionLog.create({
     data: { ...input, projectId, createdById: userId },
+    include: createdBySelect,
   });
 }
 
@@ -17,6 +24,7 @@ export async function listDecisions(userId: string, projectId: string) {
   return prisma.decisionLog.findMany({
     where: { projectId },
     orderBy: { decidedAt: 'desc' },
+    include: createdBySelect,
   });
 }
 
@@ -37,7 +45,11 @@ export async function updateDecision(
   input: UpdateDecisionInput,
 ) {
   const decision = await getOwnedDecision(userId, projectId, decisionId);
-  return prisma.decisionLog.update({ where: { id: decision.id }, data: input });
+  return prisma.decisionLog.update({
+    where: { id: decision.id },
+    data: input,
+    include: createdBySelect,
+  });
 }
 
 export async function deleteDecision(userId: string, projectId: string, decisionId: string) {

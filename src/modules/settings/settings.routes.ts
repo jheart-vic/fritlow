@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { requireAuth } from '../../middleware/auth';
+import { avatarUpload } from '../../middleware/upload';
 import { validateBody } from '../../middleware/validate';
 import * as settingsController from './settings.controller';
 import {
@@ -49,6 +50,71 @@ settingsRouter.use(requireAuth);
  *             schema: { $ref: '#/components/schemas/Error' }
  */
 settingsRouter.patch('/profile', validateBody(updateProfileSchema), settingsController.updateProfile);
+
+/**
+ * @openapi
+ * /api/v1/settings/avatar:
+ *   post:
+ *     tags: [Settings]
+ *     summary: Upload / replace your profile photo
+ *     description: Multipart upload (field name `avatar`, image only, ≤5 MB). Stored on Cloudinary; the user's `avatarUrl` is set to the hosted URL. Re-uploading replaces the previous image.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [avatar]
+ *             properties:
+ *               avatar: { type: string, format: binary, description: "Image file (jpg/png/webp/…), ≤5 MB" }
+ *     responses:
+ *       200:
+ *         description: Avatar updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 user: { $ref: '#/components/schemas/User' }
+ *       400:
+ *         description: No file, non-image, or file too large
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *       401:
+ *         description: Missing or invalid access token
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *       503:
+ *         description: Image uploads not configured on this server
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *   delete:
+ *     tags: [Settings]
+ *     summary: Remove your profile photo (revert to initials)
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Avatar removed (avatarUrl now null)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 user: { $ref: '#/components/schemas/User' }
+ *       401:
+ *         description: Missing or invalid access token
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ */
+settingsRouter.post('/avatar', avatarUpload, settingsController.updateAvatar);
+settingsRouter.delete('/avatar', settingsController.removeAvatar);
 
 /**
  * @openapi

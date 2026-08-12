@@ -32,6 +32,25 @@ export async function followUp(req: Request, res: Response) {
   res.status(200).json(result);
 }
 
+export async function skipFollowUp(req: Request, res: Response) {
+  const result = await discoveryService.skipFollowUp(
+    req.user!.id,
+    projectId(req),
+    req.params.questionId as string,
+  );
+  res.status(200).json(result);
+}
+
+export async function pause(req: Request, res: Response) {
+  const session = await discoveryService.pauseSession(req.user!.id, projectId(req));
+  res.status(200).json({ session });
+}
+
+export async function resume(req: Request, res: Response) {
+  const session = await discoveryService.resumeSession(req.user!.id, projectId(req));
+  res.status(200).json({ session });
+}
+
 export async function complete(req: Request, res: Response) {
   const session = await discoveryService.completeSession(req.user!.id, projectId(req));
   res.status(200).json({ session });

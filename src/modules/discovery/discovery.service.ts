@@ -5,7 +5,7 @@ import { ApiError } from '../../utils/api-error';
 import { getProject } from '../projects/project.service';
 import { triggerRecommendations } from '../recommendations/recommendation.service';
 import { generateQuestionPlan, type PlanQuestion } from './discovery.plan';
-import { assembleBasePlan } from './questions';
+import { assembleBasePlan, planModules } from './questions';
 import type { SubmitAnswerInput } from './discovery.schemas';
 
 // Shape of the JSONB `answer` column on DiscoveryAnswer.
@@ -87,6 +87,8 @@ function buildProgress(plan: PlanQuestion[], answeredIds: Set<string>) {
     total: plan.length,
     nextQuestion: next,
     questions: plan,
+    // Module breakdown (label, question count, time estimate) for the resume card.
+    modules: planModules(plan),
   };
 }
 
@@ -275,6 +277,81 @@ export async function generateFollowUp(userId: string, projectId: string, questi
   });
 
   return { questionId, followUp: followUpQuestion };
+}
+
+// Dismiss the AI follow-up on a question (the founder doesn't want to answer it
+// and wants to move on). Removes the stored follow-up so the UI stops prompting;
+// re-generating later creates a fresh one. Follow-ups are optional and never
+// block completion, so this is purely clearing UI state.
+export async function skipFollowUp(userId: string, projectId: string, questionId: string) {
+  await getProject(userId, projectId);
+
+  const session = await prisma.discoverySession.findUnique({ where: { projectId } });
+  if (!session) {
+    throw ApiError.notFound('No discovery session for this project yet');
+  }
+
+  const answerRow = await prisma.discoveryAnswer.findUnique({
+    where: { sessionId_questionId: { sessionId: session.id, questionId } },
+  });
+  if (!answerRow) {
+    throw ApiError.badRequest('No answer for this question yet');
+  }
+
+  const payload = answerRow.answer as unknown as AnswerPayload;
+  if (!payload.followUp) {
+    throw ApiError.badRequest('There is no follow-up to skip on this question');
+  }
+
+  // Rewrite the answer without the followUp key.
+  await prisma.discoveryAnswer.update({
+    where: { id: answerRow.id },
+    data: {
+      answer: {
+        text: payload.text,
+        confidence: payload.confidence ?? null,
+        confidenceLabel: payload.confidenceLabel ?? null,
+      },
+    },
+  });
+
+  return { questionId, followUpSkipped: true };
+}
+
+// Pause the interview to continue later. Answers are closed while PAUSED
+// (submitAnswer already rejects any non-ACTIVE session); resume flips it back.
+export async function pauseSession(userId: string, projectId: string) {
+  await getProject(userId, projectId);
+
+  const session = await prisma.discoverySession.findUnique({ where: { projectId } });
+  if (!session) {
+    throw ApiError.notFound('No discovery session for this project yet');
+  }
+  if (session.status !== 'ACTIVE') {
+    throw ApiError.badRequest(`Only an active session can be paused (this one is ${session.status.toLowerCase()})`);
+  }
+
+  return prisma.discoverySession.update({
+    where: { id: session.id },
+    data: { status: 'PAUSED' },
+  });
+}
+
+export async function resumeSession(userId: string, projectId: string) {
+  await getProject(userId, projectId);
+
+  const session = await prisma.discoverySession.findUnique({ where: { projectId } });
+  if (!session) {
+    throw ApiError.notFound('No discovery session for this project yet');
+  }
+  if (session.status !== 'PAUSED') {
+    throw ApiError.badRequest(`Only a paused session can be resumed (this one is ${session.status.toLowerCase()})`);
+  }
+
+  return prisma.discoverySession.update({
+    where: { id: session.id },
+    data: { status: 'ACTIVE' },
+  });
 }
 
 export async function completeSession(userId: string, projectId: string) {

@@ -220,6 +220,11 @@ export async function updateRecommendationStatus(
 
   return prisma.recommendation.update({
     where: { id: recommendation.id },
-    data: { status: input.status },
+    // Stamp WHEN the status changed (only when it actually changes) so the UI
+    // can show an accurate "Dismissed on …" / "Resolved on …", not "last edited".
+    data: {
+      status: input.status,
+      ...(input.status !== recommendation.status ? { statusChangedAt: new Date() } : {}),
+    },
   });
 }

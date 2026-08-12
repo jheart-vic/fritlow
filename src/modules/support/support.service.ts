@@ -14,7 +14,7 @@ import type {
 // an unread flag is a pure timestamp comparison (no per-message read rows).
 
 const customerSelect = {
-  customer: { select: { id: true, fullName: true, email: true } },
+  customer: { select: { id: true, fullName: true, email: true, avatarUrl: true } },
 } as const;
 
 const messageSelect = {
@@ -23,7 +23,7 @@ const messageSelect = {
   senderType: true,
   senderId: true,
   createdAt: true,
-  sender: { select: { id: true, fullName: true } },
+  sender: { select: { id: true, fullName: true, avatarUrl: true } },
 } as const;
 
 type ConversationRow = {

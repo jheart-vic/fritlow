@@ -68,6 +68,35 @@ healthScoreRouter.use(requireAuth);
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/Error' }
+ * /api/v1/projects/{projectId}/health-score/history:
+ *   get:
+ *     tags: [Health Score]
+ *     summary: Get the health-score trend history
+ *     description: Every computed score for this project, newest first (up to 100). Use the two most recent to show a delta, or the full list for a trend chart.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: History (newest first)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 history:
+ *                   type: array
+ *                   items: { $ref: '#/components/schemas/HealthScoreSnapshot' }
+ *       404:
+ *         description: Project not found / not a member
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
  */
 healthScoreRouter.post('/', healthController.compute);
 healthScoreRouter.get('/', healthController.get);
+healthScoreRouter.get('/history', healthController.history);

@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { ApiError } from '../../utils/api-error';
 import * as settingsService from './settings.service';
 
 // All routes here sit behind requireAuth, so req.user is always present.
@@ -6,6 +7,20 @@ import * as settingsService from './settings.service';
 
 export async function updateProfile(req: Request, res: Response) {
   const user = await settingsService.updateProfile(req.user!.id, req.body);
+  res.status(200).json({ user });
+}
+
+export async function updateAvatar(req: Request, res: Response) {
+  // avatarUpload (multer) puts the parsed file on req.file.
+  if (!req.file) {
+    throw ApiError.badRequest('No image file provided (send multipart field "avatar")');
+  }
+  const user = await settingsService.updateAvatar(req.user!.id, req.file.buffer);
+  res.status(200).json({ user });
+}
+
+export async function removeAvatar(req: Request, res: Response) {
+  const user = await settingsService.removeAvatar(req.user!.id);
   res.status(200).json({ user });
 }
 

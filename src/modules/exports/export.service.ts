@@ -21,10 +21,15 @@ const FORMAT_META: Record<ExportFormatKey, { ext: string; contentType: string; d
   markdown: { ext: 'md', contentType: 'text/markdown; charset=utf-8', db: 'MARKDOWN' },
 };
 
+export interface ExportOptions {
+  includeTranscript?: boolean;
+}
+
 export async function exportBlueprint(
   userId: string,
   projectId: string,
   format: ExportFormatKey,
+  options: ExportOptions = {},
 ): Promise<ExportResult> {
   const project = await getProject(userId, projectId);
 
@@ -36,13 +41,23 @@ export async function exportBlueprint(
     throw ApiError.notFound('Nothing to export — generate the blueprint first');
   }
 
+  const sections = blueprint.sections.map((s) => ({
+    title: s.title,
+    markdown: (s.content as { markdown: string }).markdown,
+  }));
+
+  // Optionally append the full discovery interview as an appendix section.
+  if (options.includeTranscript) {
+    const transcript = await buildTranscriptMarkdown(projectId);
+    if (transcript) {
+      sections.push({ title: 'Appendix: Discovery Interview Transcript', markdown: transcript });
+    }
+  }
+
   const doc: ExportableDoc = {
     title: project.name,
     subtitle: project.oneLineIdea,
-    sections: blueprint.sections.map((s) => ({
-      title: s.title,
-      markdown: (s.content as { markdown: string }).markdown,
-    })),
+    sections,
   };
 
   const meta = FORMAT_META[format];
@@ -64,4 +79,30 @@ export async function exportBlueprint(
     filename: `${slug}-blueprint.${meta.ext}`,
     contentType: meta.contentType,
   };
+}
+
+// Builds a markdown transcript of the discovery interview (questions, answers,
+// and any AI follow-ups) for the export appendix. Returns null if there's no
+// session/answers to include.
+async function buildTranscriptMarkdown(projectId: string): Promise<string | null> {
+  const session = await prisma.discoverySession.findUnique({
+    where: { projectId },
+    include: { answers: { orderBy: { answeredAt: 'asc' } } },
+  });
+  if (!session || session.answers.length === 0) return null;
+
+  return session.answers
+    .map((a) => {
+      const payload = a.answer as {
+        text: string;
+        followUp?: { question: string; answer: string | null };
+      };
+      const lines = [`**${a.questionText}**`, '', payload.text];
+      if (payload.followUp) {
+        lines.push('', `*Follow-up:* ${payload.followUp.question}`);
+        if (payload.followUp.answer) lines.push('', payload.followUp.answer);
+      }
+      return lines.join('\n');
+    })
+    .join('\n\n---\n\n');
 }

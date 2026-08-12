@@ -24,6 +24,11 @@ exportRouter.use(requireAuth);
  *         name: format
  *         required: true
  *         schema: { type: string, enum: [pdf, docx, markdown] }
+ *       - in: query
+ *         name: includeTranscript
+ *         required: false
+ *         schema: { type: boolean }
+ *         description: When true, appends the full Discovery interview transcript as an appendix.
  *     responses:
  *       200:
  *         description: The file (Content-Disposition attachment)

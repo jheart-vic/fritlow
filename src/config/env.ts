@@ -72,6 +72,12 @@ const envSchema = z.object({
   // broadcasts reach clients across multiple server instances. Unset = single
   // instance / in-memory (fine for dev).
   REDIS_URL: z.string().optional(),
+  // Cloudinary — stores user avatar uploads. All three are optional: if any is
+  // missing the avatar upload endpoint returns 503 (like the AI layer) and
+  // everything else runs normally.
+  CLOUDINARY_CLOUD_NAME: z.string().optional(),
+  CLOUDINARY_API_KEY: z.string().optional(),
+  CLOUDINARY_API_SECRET: z.string().optional(),
   // How many proxy hops sit in front of the API (Render/Nginx = 1). Tells
   // Express to trust that many X-Forwarded-For entries so req.ip is the real
   // client, not the proxy — otherwise every request shares one bucket.

@@ -214,10 +214,16 @@ export async function generateBlueprintStream(
   return blueprint;
 }
 
+// Who last edited a section — embedded on section reads so the editor can show
+// "Edited by …". Null for AI-generated content that was never hand-edited.
+const updatedBySelect = {
+  updatedBy: { select: { id: true, fullName: true, avatarUrl: true } },
+} as const;
+
 async function getBlueprintById(id: string) {
   return prisma.blueprint.findUnique({
     where: { id },
-    include: { sections: { orderBy: { order: 'asc' } } },
+    include: { sections: { orderBy: { order: 'asc' }, include: updatedBySelect } },
   });
 }
 
@@ -226,7 +232,7 @@ export async function getBlueprint(userId: string, projectId: string) {
 
   const blueprint = await prisma.blueprint.findUnique({
     where: { projectId },
-    include: { sections: { orderBy: { order: 'asc' } } },
+    include: { sections: { orderBy: { order: 'asc' }, include: updatedBySelect } },
   });
   if (!blueprint) {
     throw ApiError.notFound('No blueprint for this project yet — generate one first');
@@ -280,21 +286,49 @@ export async function updateSection(
     });
     return tx.blueprintSection.update({
       where: { id: section.id },
-      data: { content: { markdown: input.markdown } },
+      data: { content: { markdown: input.markdown }, updatedById: userId },
+      include: updatedBySelect,
     });
   });
 }
 
-// The history behind a section — newest edit first. Each row is the content
-// as it was before some edit replaced it, plus who made that edit and when.
+// The history behind a section — newest first. The FIRST item is the current
+// live content (marked `isCurrent`), followed by past snapshots (each the
+// content as it was before some edit replaced it, with who made that edit).
 export async function listSectionVersions(userId: string, projectId: string, sectionKey: string) {
-  const section = await getOwnedSection(userId, projectId, sectionKey);
+  await getProject(userId, projectId);
 
-  return prisma.blueprintSectionVersion.findMany({
+  const blueprint = await prisma.blueprint.findUnique({ where: { projectId } });
+  if (!blueprint) {
+    throw ApiError.notFound('No blueprint for this project yet');
+  }
+  const section = await prisma.blueprintSection.findUnique({
+    where: { blueprintId_key: { blueprintId: blueprint.id, key: sectionKey } },
+    include: updatedBySelect,
+  });
+  if (!section) {
+    throw ApiError.notFound(`Unknown blueprint section: ${sectionKey}`);
+  }
+
+  const past = await prisma.blueprintSectionVersion.findMany({
     where: { blueprintSectionId: section.id },
     orderBy: { versionNumber: 'desc' },
-    include: { editedBy: { select: { id: true, fullName: true } } },
+    include: { editedBy: { select: { id: true, fullName: true, avatarUrl: true } } },
   });
+
+  // Synthesize a "current" entry from the live section so the UI can show
+  // "Version N (Current) · Edited by …" without inventing it client-side.
+  const current = {
+    id: section.id,
+    sectionKey: section.key,
+    content: section.content,
+    versionNumber: past.length + 1,
+    editedBy: section.updatedBy, // null for never-hand-edited AI content
+    createdAt: section.updatedAt,
+    isCurrent: true,
+  };
+
+  return [current, ...past.map((v) => ({ ...v, isCurrent: false }))];
 }
 
 // Dynamic Impact Analysis: after a section is edited, ask the AI which OTHER
@@ -329,9 +363,12 @@ export async function analyzeSectionImpact(userId: string, projectId: string, se
     system:
       'You analyze consistency across a product blueprint. Given one section that was just ' +
       'edited and the other sections, identify which OTHER sections may now be inconsistent, ' +
-      'outdated, or contradicted by the edit, and briefly why. Only list sections that are ' +
-      'genuinely affected — an empty list is a fine answer. Respond with ONLY a JSON array, ' +
-      'no code fences: [{"sectionKey":"<one of the provided keys>","reason":"<1 sentence>"}].',
+      'outdated, or contradicted by the edit. For each affected section give: "reason" (1 ' +
+      'sentence on WHY it is affected) and "excerpt" (1-2 sentences of specific strategic ' +
+      'insight — what in that section should change to stay consistent). Only list sections ' +
+      'that are genuinely affected — an empty list is a fine answer. Respond with ONLY a JSON ' +
+      'array, no code fences: ' +
+      '[{"sectionKey":"<one of the provided keys>","reason":"<1 sentence>","excerpt":"<1-2 sentences>"}].',
     prompt: [
       `Edited section: "${section.key}" — ${section.title}`,
       `Its new content:\n${edited.markdown ?? ''}`,
@@ -353,9 +390,11 @@ export async function analyzeSectionImpact(userId: string, projectId: string, se
   // Keep only real other-section keys with a reason — never invent sections.
   const validKeys = new Set(sections.map((s) => s.key));
   const affectedSections = (Array.isArray(parsed) ? parsed : [])
-    .map((x: { sectionKey?: unknown; reason?: unknown }) => ({
+    .map((x: { sectionKey?: unknown; reason?: unknown; excerpt?: unknown }) => ({
       sectionKey: String(x.sectionKey ?? '').trim(),
       reason: String(x.reason ?? '').trim(),
+      // AI-written strategic insight — what should change in that section.
+      excerpt: String(x.excerpt ?? '').trim(),
     }))
     .filter(
       (x) => x.sectionKey && x.reason && validKeys.has(x.sectionKey) && x.sectionKey !== section.key,
@@ -395,7 +434,8 @@ export async function restoreSectionVersion(
     });
     return tx.blueprintSection.update({
       where: { id: section.id },
-      data: { content: version.content as Prisma.InputJsonValue },
+      data: { content: version.content as Prisma.InputJsonValue, updatedById: userId },
+      include: updatedBySelect,
     });
   });
 }

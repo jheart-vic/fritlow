@@ -110,11 +110,25 @@ export async function computeHealthScore(userId: string, projectId: string) {
   // Prisma's Json input type wants an explicit cast for arrays.
   const dimensionsJson = dimensions as unknown as Prisma.InputJsonValue;
 
-  const healthScore = await prisma.healthScore.upsert({
+  // Capture the previous score BEFORE this computation (for the trend/delta),
+  // then write the live score AND append a history snapshot atomically.
+  const prevSnapshot = await prisma.healthScoreSnapshot.findFirst({
     where: { projectId },
-    create: { projectId, overall, dimensions: dimensionsJson, summary: parsed.summary ?? null },
-    update: { overall, dimensions: dimensionsJson, summary: parsed.summary ?? null },
+    orderBy: { createdAt: 'desc' },
+    select: { overall: true },
   });
+  const previousOverall = prevSnapshot?.overall ?? null;
+
+  const [healthScore] = await prisma.$transaction([
+    prisma.healthScore.upsert({
+      where: { projectId },
+      create: { projectId, overall, dimensions: dimensionsJson, summary: parsed.summary ?? null },
+      update: { overall, dimensions: dimensionsJson, summary: parsed.summary ?? null },
+    }),
+    prisma.healthScoreSnapshot.create({
+      data: { projectId, overall, dimensions: dimensionsJson, summary: parsed.summary ?? null },
+    }),
+  ]);
 
   // Only refresh the Strategist when something is actually weak — a healthy
   // score doesn't need fresh recommendations, and this AI call isn't free.
@@ -122,7 +136,13 @@ export async function computeHealthScore(userId: string, projectId: string) {
     triggerRecommendations(userId, projectId, 'health.low_dimension');
   }
 
-  return healthScore;
+  return { ...healthScore, previousOverall, delta: computeDelta(overall, previousOverall) };
+}
+
+// The change since the previous score, for the "+4.2% since last week" UI.
+// null when there's no prior score to compare against.
+function computeDelta(current: number, previous: number | null): number | null {
+  return previous === null ? null : current - previous;
 }
 
 export async function getHealthScore(userId: string, projectId: string) {
@@ -132,5 +152,29 @@ export async function getHealthScore(userId: string, projectId: string) {
   if (!healthScore) {
     throw ApiError.notFound('No health score yet — compute one first');
   }
-  return healthScore;
+
+  // The two most recent snapshots: [0] mirrors the current live score, [1] is
+  // the one before it — the baseline for the delta.
+  const recent = await prisma.healthScoreSnapshot.findMany({
+    where: { projectId },
+    orderBy: { createdAt: 'desc' },
+    take: 2,
+    select: { overall: true },
+  });
+  const previousOverall = recent[1]?.overall ?? null;
+
+  return { ...healthScore, previousOverall, delta: computeDelta(healthScore.overall, previousOverall) };
+}
+
+// The full trend history (newest first) for a project's health score.
+export async function getHealthHistory(userId: string, projectId: string) {
+  await getProject(userId, projectId);
+
+  const snapshots = await prisma.healthScoreSnapshot.findMany({
+    where: { projectId },
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+    select: { id: true, overall: true, dimensions: true, summary: true, createdAt: true },
+  });
+  return snapshots;
 }
