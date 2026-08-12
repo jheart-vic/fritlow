@@ -7,3 +7,6 @@ dist
 
 # Generated Prisma client (rebuilt with `npm run db:generate`)
 /src/generated/prisma
+
+# Local test-run output (scratch)
+test-out.txt

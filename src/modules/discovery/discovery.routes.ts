@@ -185,6 +185,86 @@ discoveryRouter.post('/answers/:questionId/follow-up', discoveryController.follo
 
 /**
  * @openapi
+ * /api/v1/projects/{projectId}/discovery/answers/{questionId}/follow-up/skip:
+ *   post:
+ *     tags: [Discovery]
+ *     summary: Dismiss the AI follow-up on a question
+ *     description: Removes the generated follow-up for this question so the UI stops prompting for it (the founder chose to skip it and move on). Follow-ups are optional and never block completion. Re-generating creates a fresh one.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: path
+ *         name: questionId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Follow-up skipped
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 questionId: { type: string }
+ *                 followUpSkipped: { type: boolean, example: true }
+ *       400:
+ *         description: No answer / no follow-up to skip
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ */
+discoveryRouter.post('/answers/:questionId/follow-up/skip', discoveryController.skipFollowUp);
+
+/**
+ * @openapi
+ * /api/v1/projects/{projectId}/discovery/pause:
+ *   post:
+ *     tags: [Discovery]
+ *     summary: Pause the interview (continue later)
+ *     description: Marks an ACTIVE session PAUSED. Answers are closed while paused; call resume to continue. The dashboard/projects progress still shows where you left off.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: "Session paused" }
+ *       400:
+ *         description: Session is not active
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ * /api/v1/projects/{projectId}/discovery/resume:
+ *   post:
+ *     tags: [Discovery]
+ *     summary: Resume a paused interview
+ *     description: Flips a PAUSED session back to ACTIVE so answers are accepted again.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: "Session resumed" }
+ *       400:
+ *         description: Session is not paused
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ */
+discoveryRouter.post('/pause', discoveryController.pause);
+discoveryRouter.post('/resume', discoveryController.resume);
+
+/**
+ * @openapi
  * /api/v1/projects/{projectId}/discovery/complete:
  *   post:
  *     tags: [Discovery]

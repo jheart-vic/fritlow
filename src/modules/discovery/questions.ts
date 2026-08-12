@@ -345,6 +345,52 @@ export const discoveryQuestions = coreQuestions;
 // whose plan can't be resolved (e.g. a legacy null plan).
 export const CORE_QUESTION_COUNT = coreQuestions.length;
 
+// Static per-module metadata — a display label and a rough time estimate, for
+// the "Resume Interview" card ("Business Strategy · Estimated time: ~8 mins").
+// Illustrative but stable; unknown/AI-added modules fall back to a default.
+export const DISCOVERY_MODULE_META: Record<string, { label: string; estimatedMinutes: number }> = {
+  problem: { label: 'Problem', estimatedMinutes: 6 },
+  customer: { label: 'Customer', estimatedMinutes: 6 },
+  business_model: { label: 'Business Model', estimatedMinutes: 8 },
+  differentiation: { label: 'Differentiation', estimatedMinutes: 5 },
+  mvp_focus: { label: 'MVP Focus', estimatedMinutes: 6 },
+  go_to_market: { label: 'Go-to-Market', estimatedMinutes: 5 },
+  risks: { label: 'Risks & Assumptions', estimatedMinutes: 5 },
+};
+
+const DEFAULT_MODULE_MINUTES = 4;
+
+// Group a session's plan into its modules (in first-appearance order) with a
+// label, question count, and time estimate — drives the module list / resume card.
+export function planModules(
+  plan: Array<{ module: string }>,
+): Array<{ module: string; label: string; questionCount: number; estimatedMinutes: number }> {
+  const order: string[] = [];
+  const counts = new Map<string, number>();
+  for (const q of plan) {
+    if (!counts.has(q.module)) order.push(q.module);
+    counts.set(q.module, (counts.get(q.module) ?? 0) + 1);
+  }
+  return order.map((module) => {
+    const meta = DISCOVERY_MODULE_META[module];
+    return {
+      module,
+      label: meta?.label ?? module,
+      questionCount: counts.get(module) ?? 0,
+      estimatedMinutes: meta?.estimatedMinutes ?? DEFAULT_MODULE_MINUTES,
+    };
+  });
+}
+
+// The question count for a session, given its stored plan (a JSONB array) — the
+// plan length, or the core count as a fallback for legacy/null plans. Shared by
+// the dashboard and the projects list so their `total` never drifts.
+export function planTotal(questionPlan: unknown): number {
+  return Array.isArray(questionPlan) && questionPlan.length > 0
+    ? questionPlan.length
+    : CORE_QUESTION_COUNT;
+}
+
 // Resolve any library id (core OR pack) — used for the global fallback lookup.
 export function getQuestion(id: string): DiscoveryQuestion | undefined {
   const core = coreQuestions.find((q) => q.id === id);

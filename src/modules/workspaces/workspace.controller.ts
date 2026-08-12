@@ -33,6 +33,25 @@ export async function inviteMember(req: Request, res: Response) {
   }
 }
 
+export async function listInvitations(req: Request, res: Response) {
+  const all = req.query.all === 'true';
+  const invitations = await workspaceService.listInvitations(
+    req.user!.id,
+    req.params.workspaceId as string,
+    all,
+  );
+  res.status(200).json({ invitations });
+}
+
+export async function revokeInvitation(req: Request, res: Response) {
+  const invitation = await workspaceService.revokeInvitation(
+    req.user!.id,
+    req.params.workspaceId as string,
+    req.params.invitationId as string,
+  );
+  res.status(200).json({ invitation });
+}
+
 export async function updateMemberRole(req: Request, res: Response) {
   const member = await workspaceService.updateMemberRole(
     req.user!.id,

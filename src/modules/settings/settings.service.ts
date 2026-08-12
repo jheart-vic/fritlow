@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../../lib/prisma';
+import { deleteAvatar, uploadAvatar } from '../../lib/cloudinary';
 import { ApiError } from '../../utils/api-error';
 import { hashPassword, verifyPassword } from '../../utils/password';
 import { type PublicUser, toPublicUser } from '../auth/auth.service';
@@ -23,6 +24,27 @@ export async function updateProfile(
     where: { id: userId },
     data: { fullName: input.fullName },
   });
+  return toPublicUser(user);
+}
+
+// Uploads a new avatar to Cloudinary and stores its URL on the user. The
+// controller has already validated that a file was provided.
+export async function updateAvatar(userId: string, file: Buffer): Promise<PublicUser> {
+  const avatarUrl = await uploadAvatar(file, userId);
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data: { avatarUrl },
+  });
+  return toPublicUser(user);
+}
+
+// Clears the avatar (back to initials). Removes the remote image best-effort.
+export async function removeAvatar(userId: string): Promise<PublicUser> {
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data: { avatarUrl: null },
+  });
+  void deleteAvatar(userId); // fire-and-forget; DB field is the source of truth
   return toPublicUser(user);
 }
 

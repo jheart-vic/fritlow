@@ -14,3 +14,8 @@ export async function get(req: Request, res: Response) {
   const healthScore = await healthService.getHealthScore(req.user!.id, projectId(req));
   res.status(200).json({ healthScore });
 }
+
+export async function history(req: Request, res: Response) {
+  const snapshots = await healthService.getHealthHistory(req.user!.id, projectId(req));
+  res.status(200).json({ history: snapshots });
+}

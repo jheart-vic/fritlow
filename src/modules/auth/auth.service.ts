@@ -29,6 +29,7 @@ export interface PublicUser {
   id: string;
   email: string;
   fullName: string;
+  avatarUrl: string | null;
   emailVerified: boolean;
   createdAt: Date;
 }
@@ -45,6 +46,7 @@ export function toPublicUser(user: {
   id: string;
   email: string;
   fullName: string;
+  avatarUrl: string | null;
   emailVerifiedAt: Date | null;
   createdAt: Date;
 }): PublicUser {
@@ -52,6 +54,7 @@ export function toPublicUser(user: {
     id: user.id,
     email: user.email,
     fullName: user.fullName,
+    avatarUrl: user.avatarUrl,
     emailVerified: user.emailVerifiedAt !== null,
     createdAt: user.createdAt,
   };

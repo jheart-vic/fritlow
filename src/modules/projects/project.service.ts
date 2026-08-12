@@ -1,5 +1,6 @@
 import { prisma } from '../../lib/prisma';
 import { ApiError } from '../../utils/api-error';
+import { planTotal } from '../discovery/questions';
 import type { CreateProjectInput, ListProjectsQuery, UpdateProjectInput } from './project.schemas';
 
 // Tenancy rules enforced here (and only here):
@@ -9,7 +10,7 @@ import type { CreateProjectInput, ListProjectsQuery, UpdateProjectInput } from '
 // Embedded in every project response so the UI can show WHO created it
 // without a second request. Deliberately tiny — never the full user row.
 const createdBySelect = {
-  createdBy: { select: { id: true, fullName: true, email: true } },
+  createdBy: { select: { id: true, fullName: true, email: true, avatarUrl: true } },
 } as const;
 
 // Returns the member row if the user belongs to the workspace, else 403.
@@ -56,14 +57,30 @@ export async function createProject(userId: string, input: CreateProjectInput) {
 export async function listProjects(userId: string, query: ListProjectsQuery) {
   // "Projects in any workspace that has a member row for me" — Prisma
   // turns this nested filter into a SQL join, no manual IN-list needed.
-  return prisma.project.findMany({
+  const projects = await prisma.project.findMany({
     where: {
       workspace: { members: { some: { userId } } },
       ...(query.status ? { status: query.status } : {}),
     },
     orderBy: { updatedAt: 'desc' },
-    include: createdBySelect,
+    include: {
+      ...createdBySelect,
+      // Enough to compute the per-project discovery progress bar (parity with
+      // the dashboard cards), without pulling every answer row.
+      discoverySession: {
+        select: { questionPlan: true, _count: { select: { answers: true } } },
+      },
+    },
   });
+
+  // Flatten the session into a small `discoveryProgress` field and drop the raw
+  // relation from the response.
+  return projects.map(({ discoverySession, ...project }) => ({
+    ...project,
+    discoveryProgress: discoverySession
+      ? { answered: discoverySession._count.answers, total: planTotal(discoverySession.questionPlan) }
+      : null,
+  }));
 }
 
 export async function getProject(userId: string, projectId: string) {

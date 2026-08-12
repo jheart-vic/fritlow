@@ -30,6 +30,11 @@ export const swaggerSpec = swaggerJsdoc({
             id: { type: 'string', format: 'uuid' },
             email: { type: 'string', format: 'email' },
             fullName: { type: 'string' },
+            avatarUrl: {
+              type: 'string',
+              nullable: true,
+              description: 'Profile photo URL (Cloudinary). null → render initials.',
+            },
             emailVerified: { type: 'boolean' },
             createdAt: { type: 'string', format: 'date-time' },
           },
@@ -83,6 +88,7 @@ export const swaggerSpec = swaggerJsdoc({
                 id: { type: 'string', format: 'uuid' },
                 fullName: { type: 'string' },
                 email: { type: 'string', format: 'email' },
+                avatarUrl: { type: 'string', nullable: true },
               },
             },
           },
@@ -433,6 +439,7 @@ export const swaggerSpec = swaggerJsdoc({
                 id: { type: 'string', format: 'uuid' },
                 fullName: { type: 'string' },
                 email: { type: 'string', format: 'email' },
+                avatarUrl: { type: 'string', nullable: true },
               },
             },
             createdAt: { type: 'string', format: 'date-time' },
@@ -525,6 +532,19 @@ export const swaggerSpec = swaggerJsdoc({
                 },
               },
             },
+            modules: {
+              type: 'array',
+              description: 'Module breakdown of the plan (for the "Resume Interview" card): label, question count, and a rough time estimate per module, in order.',
+              items: {
+                type: 'object',
+                properties: {
+                  module: { type: 'string', example: 'business_model' },
+                  label: { type: 'string', example: 'Business Model' },
+                  questionCount: { type: 'integer', example: 3 },
+                  estimatedMinutes: { type: 'integer', example: 8 },
+                },
+              },
+            },
           },
         },
         BlueprintSection: {
@@ -537,6 +557,16 @@ export const swaggerSpec = swaggerJsdoc({
             content: {
               type: 'object',
               properties: { markdown: { type: 'string' } },
+            },
+            updatedBy: {
+              type: 'object',
+              nullable: true,
+              description: 'Who last edited this section (null for AI-generated content never hand-edited)',
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                fullName: { type: 'string' },
+                avatarUrl: { type: 'string', nullable: true },
+              },
             },
             updatedAt: { type: 'string', format: 'date-time' },
           },
@@ -554,11 +584,17 @@ export const swaggerSpec = swaggerJsdoc({
             },
             editedBy: {
               type: 'object',
-              description: 'The user whose edit replaced this content',
+              nullable: true,
+              description: 'The user whose edit replaced this content (null for AI-generated content never hand-edited)',
               properties: {
                 id: { type: 'string', format: 'uuid' },
                 fullName: { type: 'string' },
+                avatarUrl: { type: 'string', nullable: true },
               },
+            },
+            isCurrent: {
+              type: 'boolean',
+              description: 'true for the FIRST item — the live current content, synthesized so the UI can show "Version N (Current)". false for past snapshots.',
             },
             createdAt: { type: 'string', format: 'date-time' },
           },
@@ -586,6 +622,16 @@ export const swaggerSpec = swaggerJsdoc({
             decidedAt: { type: 'string', format: 'date-time' },
             projectId: { type: 'string', format: 'uuid' },
             createdById: { type: 'string', format: 'uuid' },
+            createdBy: {
+              type: 'object',
+              description: 'The user who logged this decision',
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                fullName: { type: 'string' },
+                email: { type: 'string', format: 'email' },
+                avatarUrl: { type: 'string', nullable: true },
+              },
+            },
           },
         },
         Recommendation: {
@@ -611,6 +657,12 @@ export const swaggerSpec = swaggerJsdoc({
               description: 'What triggered it, e.g. "blueprint.business_model" or "health.differentiation"',
               example: 'blueprint.business_model',
             },
+            statusChangedAt: {
+              type: 'string',
+              format: 'date-time',
+              nullable: true,
+              description: 'When the status last changed — use for "Dismissed on …" / "Resolved on …". null if never changed from OPEN.',
+            },
             projectId: { type: 'string', format: 'uuid' },
             createdAt: { type: 'string', format: 'date-time' },
             updatedAt: { type: 'string', format: 'date-time' },
@@ -620,6 +672,16 @@ export const swaggerSpec = swaggerJsdoc({
           type: 'object',
           properties: {
             overall: { type: 'integer', minimum: 0, maximum: 100 },
+            previousOverall: {
+              type: 'integer',
+              nullable: true,
+              description: 'The overall score before this one (from history). null if this is the first score.',
+            },
+            delta: {
+              type: 'integer',
+              nullable: true,
+              description: 'overall − previousOverall — drives the "+4.2% since last week" trend. null if no prior score.',
+            },
             summary: { type: 'string', nullable: true },
             dimensions: {
               type: 'array',
@@ -634,6 +696,28 @@ export const swaggerSpec = swaggerJsdoc({
               },
             },
             updatedAt: { type: 'string', format: 'date-time' },
+          },
+        },
+        HealthScoreSnapshot: {
+          type: 'object',
+          description: 'One historical health-score computation (for the trend chart).',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            overall: { type: 'integer', minimum: 0, maximum: 100 },
+            summary: { type: 'string', nullable: true },
+            dimensions: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  key: { type: 'string' },
+                  label: { type: 'string' },
+                  score: { type: 'integer' },
+                  feedback: { type: 'string' },
+                },
+              },
+            },
+            createdAt: { type: 'string', format: 'date-time' },
           },
         },
         NextAction: {

@@ -19,7 +19,7 @@ const messageSelect = {
   channelId: true,
   senderId: true,
   createdAt: true,
-  sender: { select: { id: true, fullName: true } },
+  sender: { select: { id: true, fullName: true, avatarUrl: true } },
 } as const;
 
 // Membership gate — you must belong to the workspace. Returns the member (role).

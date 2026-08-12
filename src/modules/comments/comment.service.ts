@@ -11,7 +11,7 @@ import type { CreateCommentInput } from './comment.schemas';
 
 // Tiny author shape embedded in every comment — never the full user row.
 const authorSelect = {
-  author: { select: { id: true, fullName: true } },
+  author: { select: { id: true, fullName: true, avatarUrl: true } },
 } as const;
 
 // The public shape of a comment (with its nested replies).

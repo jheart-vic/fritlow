@@ -155,6 +155,88 @@ workspaceRouter.post(
 
 /**
  * @openapi
+ * /api/v1/workspaces/{workspaceId}/invitations:
+ *   get:
+ *     tags: [Workspaces]
+ *     summary: List outstanding (pending) invitations
+ *     description: The "Invitation sent" rows on the members page. OWNER/ADMIN only. Returns PENDING invitations by default; pass `?all=true` to include ACCEPTED/REVOKED history.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: workspaceId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: query
+ *         name: all
+ *         schema: { type: boolean }
+ *         description: Include ACCEPTED/REVOKED, not just PENDING
+ *     responses:
+ *       200:
+ *         description: Invitations (newest first)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 invitations:
+ *                   type: array
+ *                   items: { $ref: '#/components/schemas/WorkspaceInvitation' }
+ *       403:
+ *         description: Not an owner/admin of this workspace
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ */
+workspaceRouter.get('/:workspaceId/invitations', workspaceController.listInvitations);
+
+/**
+ * @openapi
+ * /api/v1/workspaces/{workspaceId}/invitations/{invitationId}:
+ *   delete:
+ *     tags: [Workspaces]
+ *     summary: Revoke a pending invitation
+ *     description: Cancels a PENDING invitation (sets it REVOKED). OWNER/ADMIN only. Already-accepted invites are memberships now — remove the member instead.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: workspaceId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: path
+ *         name: invitationId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Invitation revoked
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 invitation: { $ref: '#/components/schemas/WorkspaceInvitation' }
+ *       400:
+ *         description: Invitation is not pending
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *       403:
+ *         description: Not an owner/admin of this workspace
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *       404:
+ *         description: Invitation not found in this workspace
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ */
+workspaceRouter.delete('/:workspaceId/invitations/:invitationId', workspaceController.revokeInvitation);
+
+/**
+ * @openapi
  * /api/v1/workspaces/{workspaceId}/members/{userId}:
  *   patch:
  *     tags: [Workspaces]

@@ -18,7 +18,7 @@ import type {
 //  - a workspace must always keep at least one OWNER
 
 const memberUserSelect = {
-  user: { select: { id: true, fullName: true, email: true } },
+  user: { select: { id: true, fullName: true, email: true, avatarUrl: true } },
 } as const;
 
 async function getMembership(userId: string, workspaceId: string) {
@@ -204,6 +204,43 @@ export async function removeMember(actorId: string, workspaceId: string, targetU
 
   await prisma.workspaceMember.delete({
     where: { userId_workspaceId: { userId: targetUserId, workspaceId } },
+  });
+}
+
+const invitationInviterSelect = {
+  invitedBy: { select: { id: true, fullName: true, avatarUrl: true } },
+} as const;
+
+// Outstanding invitations for a workspace (the "Invitation sent" rows). Manager
+// only, since it lists invitee emails. Defaults to PENDING; pass all=true to
+// include ACCEPTED/REVOKED history.
+export async function listInvitations(actorId: string, workspaceId: string, all = false) {
+  await assertManager(actorId, workspaceId);
+
+  return prisma.workspaceInvitation.findMany({
+    where: { workspaceId, ...(all ? {} : { status: 'PENDING' }) },
+    orderBy: { createdAt: 'desc' },
+    include: invitationInviterSelect,
+  });
+}
+
+// Cancel a pending invitation (the "…" → Revoke action). Only PENDING invites
+// can be revoked; already-accepted ones are memberships now (remove instead).
+export async function revokeInvitation(actorId: string, workspaceId: string, invitationId: string) {
+  await assertManager(actorId, workspaceId);
+
+  const invitation = await prisma.workspaceInvitation.findUnique({ where: { id: invitationId } });
+  if (!invitation || invitation.workspaceId !== workspaceId) {
+    throw ApiError.notFound('Invitation not found in this workspace');
+  }
+  if (invitation.status !== 'PENDING') {
+    throw ApiError.badRequest(`Only pending invitations can be revoked (this one is ${invitation.status})`);
+  }
+
+  return prisma.workspaceInvitation.update({
+    where: { id: invitation.id },
+    data: { status: 'REVOKED' },
+    include: invitationInviterSelect,
   });
 }
 

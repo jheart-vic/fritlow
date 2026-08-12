@@ -1,5 +1,5 @@
 import { prisma } from '../../lib/prisma';
-import { CORE_QUESTION_COUNT } from '../discovery/questions';
+import { planTotal } from '../discovery/questions';
 
 // The dashboard's design north star: answer "what should I do next?" in
 // three seconds. This service computes exactly one recommended action per
@@ -74,8 +74,7 @@ export async function getDashboard(userId: string): Promise<{
   const dashboardProjects: DashboardProject[] = projects.map((p) => {
     // Total question count is per-project now (the session's tailored plan).
     // Legacy sessions with no stored plan fall back to the core-question count.
-    const plan = p.discoverySession?.questionPlan;
-    const total = Array.isArray(plan) && plan.length > 0 ? plan.length : CORE_QUESTION_COUNT;
+    const total = planTotal(p.discoverySession?.questionPlan);
     const session = p.discoverySession
       ? { status: p.discoverySession.status, answeredCount: p.discoverySession._count.answers, total }
       : null;
