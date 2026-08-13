@@ -119,6 +119,12 @@ model User {
 model Workspace {
   id        String   @id @default(uuid())
   name      String
+  // The private workspace created for a user at registration. It holds every
+  // project they create without naming a workspace, so it is NOT a place to
+  // invite collaborators into — inviting there would expose their whole
+  // back catalogue. The invite endpoint refuses it; founders create a named
+  // workspace to collaborate and move projects into it.
+  isPersonal Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

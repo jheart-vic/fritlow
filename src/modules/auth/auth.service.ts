@@ -1,3 +1,4 @@
+import type { PlatformRole } from '../../generated/prisma/enums';
 import { prisma } from '../../lib/prisma';
 import { env } from '../../config/env';
 import {
@@ -31,6 +32,11 @@ export interface PublicUser {
   fullName: string;
   avatarUrl: string | null;
   emailVerified: boolean;
+  // Platform-level role, so the frontend can gate staff-only UI (an Admin nav
+  // link) without guessing. USER for everyone who signs up. This is a HINT for
+  // rendering only — every /admin route re-reads the role from the DB on each
+  // request, so a stale or tampered client value grants nothing.
+  platformRole: PlatformRole;
   createdAt: Date;
 }
 
@@ -48,6 +54,7 @@ export function toPublicUser(user: {
   fullName: string;
   avatarUrl: string | null;
   emailVerifiedAt: Date | null;
+  platformRole: PlatformRole;
   createdAt: Date;
 }): PublicUser {
   return {
@@ -56,6 +63,7 @@ export function toPublicUser(user: {
     fullName: user.fullName,
     avatarUrl: user.avatarUrl,
     emailVerified: user.emailVerifiedAt !== null,
+    platformRole: user.platformRole,
     createdAt: user.createdAt,
   };
 }
@@ -110,6 +118,9 @@ export async function register(input: RegisterInput): Promise<{ user: PublicUser
       await tx.workspace.create({
         data: {
           name: `${input.fullName.split(' ')[0]}'s Workspace`,
+          // Marks this as the user's private space: projects default here, and
+          // collaborators can never be invited into it.
+          isPersonal: true,
           members: { create: { userId: created.id, role: 'OWNER' } },
         },
       });

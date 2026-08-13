@@ -81,6 +81,15 @@ Note on **Notifications** (P2 above) — still CHALLENGE BEFORE BUILDING: dashbo
   - **Plan generation reads the document too**, so the interview probes what the PRD leaves open instead of re-asking it.
   - **Verified live against GPT-5**: text-layer PDF → `PDF_TEXT` (zero AI cost), no-text PDF → `VISION` round-trip OK. Anthropic attachment path is fully wired but **untested** (no credits) — same status as the rest of the AI layer.
 
+- [x] **Frontend-reported gaps + workspace sharing model** (DONE 2026-08-12, second batch):
+  - **Spec fixes the frontend flagged:** provenance fields (`source`/`sourceDocumentId`/`needsReview`) added to the `DiscoveryProgress` answer schema (they were live but undocumented — keys are **absent**, never null, on founder-typed answers); `/admin/stats` prose corrected `ADMIN` → `SUPERADMIN` (the rename shipped in S16; only the description was stale).
+  - **`platformRole` now returned by `toPublicUser`** → login, register, verify-email, `GET /auth/me`. The frontend previously could not gate an Admin nav link at all. Rendering hint only — `requirePlatformRole` still re-reads from the DB per request.
+  - **`GET /projects?workspaceId=`** — scopes the list to one workspace (403 if not a member, rather than a misleading empty list). Powers a workspace switcher; omitting it keeps the old flat behaviour.
+  - **`Workspace.isPersonal`** (migrations `add_workspace_is_personal` + `fix_is_personal_shared_workspaces`, both applied). Set at registration. The first backfill used the old "earliest workspace you own" rule and **mislabelled two multi-member workspaces as personal** — the corrective migration applies the better rule: a workspace with more than one member is not private. Verified against live data (3 personal, all single-member).
+  - **Invites into a personal workspace are refused (400)** — it accumulates every project a founder ever started, so one invite would have exposed the lot. **Breaking for the frontend invite flow**: it now needs a create/pick-workspace step. Every invite response also carries **`sharedProjectCount`** so the UI can say what the invitee will actually see.
+  - **Project move**: `PATCH /projects/:id` accepts `workspaceId`, requiring OWNER/ADMIN on **both** sides (same bar as delete — the source's members lose access). Without this, blocking personal-workspace invites would have been a dead end for anyone whose work already lives there.
+  - Still open, deliberately not built: an **accept step** for invites (existing users are still added instantly), and tightening MEMBER permissions (a MEMBER can change project status and delete uploaded documents).
+
 ### Docs to keep current with any API change
 - OpenAPI `@openapi` blocks in `*.routes.ts` (the frontend contract, served at /docs)
 - `docs/frontend-api-guide.md` (all endpoints + Postman walkthrough)

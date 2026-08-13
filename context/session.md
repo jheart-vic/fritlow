@@ -23,6 +23,26 @@ Client-requested: "we want users to be able to upload their projects prd or mvp 
 - **Both providers wired at parity**, OpenAI as the live one. Anthropic's attachment path is implemented but **untested** (no credits) — same standing as the rest of the AI layer.
 - Cloudinary `resource_type: 'raw'` for the original files (DO Spaces still unwired); storage is best-effort — the extracted text is what Fritlow actually reads.
 
+### Done — frontend-reported gaps + workspace sharing model (same session)
+Frontend dev reported two spec problems; a third question ("why does an invited person see every project of the inviter?") turned out to be the real find.
+
+- **Their reports, both valid:** the pre-fill provenance fields were live but missing from the Swagger `DiscoveryProgress` answer schema (added, with the absent-vs-null semantics spelled out); `/admin/stats`'s description still said `ADMIN` after the S16 rename to `SUPERADMIN` (prose-only bug — the guard was always correct).
+- **Real gap:** `toPublicUser` never returned `platformRole`, so the frontend **could not gate staff UI at all** — it only appeared on `/admin` responses you must already be staff to fetch. Now returned by login/register/verify-email/`/auth/me`.
+- **The visibility question:** working as designed — tenancy is workspace-level (closer to a GitHub org than a repo), and invite adds an existing user to the workspace immediately. But `createProject` defaults to the **personal** workspace, so the first collaborator invited there saw the founder's entire back catalogue. Also `GET /projects` had no `workspaceId` filter, so the list was a flat mix across workspaces with no way to scope it.
+- **Fixes:** `Workspace.isPersonal` (+ backfill migration applying the old "earliest workspace you own" rule once); invites into a personal workspace **refused with a 400** pointing at the real path; `sharedProjectCount` on every invite response so the founder sees what they're exposing; `?workspaceId=` on `GET /projects`; and `PATCH /projects/:id` can now **move a project between workspaces** (OWNER/ADMIN on both sides — the source's members lose access, so it carries delete's bar).
+
+### Decisions
+- **Block rather than warn** on personal-workspace invites: a warning still makes over-sharing the default outcome of a normal action. Knowingly **breaking** for the frontend's invite flow (needs a create/pick-workspace step); done now because pre-deploy with no users is the cheapest this ever gets.
+- **Project move requires OWNER/ADMIN on both sides**, since moving out is effectively removing the project from everyone in the source workspace.
+- **Deliberately not built** (offered, not taken): an accept step for invites, and tightening MEMBER permissions — today a MEMBER can change project status and delete uploaded documents.
+
+### Backfill caught a bug — worth remembering
+Verifying the backfill against real data (rather than trusting it) found the "earliest workspace you own" rule had mislabelled **two multi-member workspaces as personal**: `D'Founders` (a genuine team workspace, 2 members) and `Zeus's Workspace` (personal by origin but already shared with a second user). Left alone, their owners could never have invited anyone else into them — a bug introduced by the fix itself. Corrective migration `fix_is_personal_shared_workspaces` applies the better rule: **a workspace with more than one member is not private.** Re-verified: 3 personal workspaces remain, all single-member.
+
+Also note what that data revealed: someone had **already** invited a user into a personal workspace — the exact over-sharing this batch prevents.
+
+Both migrations applied (Neon's DIRECT endpoint flapped with P1001 for ~20 min first — same failure mode as S16; a retry loop got through).
+
 ### Next
 - Live-test the **Anthropic** attachment path when credits exist (and the still-pending blueprint/health-score Anthropic paths).
 - Test coverage for the documents module + pre-fill is still blocked on the Neon test DB (`.env.test`) — same blocker as Session 20.

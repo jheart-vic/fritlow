@@ -26,8 +26,18 @@ async function assertMembership(userId: string, workspaceId: string) {
   return member;
 }
 
-// The user's personal workspace = the one they OWN (created at registration).
+// The user's personal workspace — the private one created at registration,
+// flagged with isPersonal. Projects created without an explicit workspaceId
+// land here.
 async function getPersonalWorkspaceId(userId: string): Promise<string> {
+  const personal = await prisma.workspace.findFirst({
+    where: { isPersonal: true, members: { some: { userId, role: 'OWNER' } } },
+    select: { id: true },
+  });
+  if (personal) return personal.id;
+
+  // Fallback for any account the isPersonal backfill didn't reach: the old
+  // rule, "the earliest workspace you own".
   const membership = await prisma.workspaceMember.findFirst({
     where: { userId, role: 'OWNER' },
     orderBy: { createdAt: 'asc' },
@@ -55,11 +65,19 @@ export async function createProject(userId: string, input: CreateProjectInput) {
 }
 
 export async function listProjects(userId: string, query: ListProjectsQuery) {
+  // Asking for one workspace you don't belong to is an error, not an empty
+  // list — silently returning [] would look like "this workspace is empty".
+  if (query.workspaceId) {
+    await assertMembership(userId, query.workspaceId);
+  }
+
   // "Projects in any workspace that has a member row for me" — Prisma
   // turns this nested filter into a SQL join, no manual IN-list needed.
+  // With workspaceId set, that narrows to the single workspace.
   const projects = await prisma.project.findMany({
     where: {
       workspace: { members: { some: { userId } } },
+      ...(query.workspaceId ? { workspaceId: query.workspaceId } : {}),
       ...(query.status ? { status: query.status } : {}),
     },
     orderBy: { updatedAt: 'desc' },
@@ -98,6 +116,27 @@ export async function getProject(userId: string, projectId: string) {
 export async function updateProject(userId: string, projectId: string, input: UpdateProjectInput) {
   // getProject already runs the membership check.
   const project = await getProject(userId, projectId);
+
+  // Moving a project between workspaces is not an ordinary field edit: it
+  // hands the project to a different set of people and takes it away from the
+  // current ones. So it carries the same bar as deleting — OWNER/ADMIN — on
+  // BOTH sides: on the source because members there lose access, on the
+  // destination because members there gain it.
+  if (input.workspaceId && input.workspaceId !== project.workspaceId) {
+    const from = await assertMembership(userId, project.workspaceId);
+    if (from.role !== 'OWNER' && from.role !== 'ADMIN') {
+      throw ApiError.forbidden(
+        'Only workspace owners or admins can move a project out of a workspace',
+      );
+    }
+
+    const to = await assertMembership(userId, input.workspaceId);
+    if (to.role !== 'OWNER' && to.role !== 'ADMIN') {
+      throw ApiError.forbidden(
+        'Only workspace owners or admins can move a project into a workspace',
+      );
+    }
+  }
 
   return prisma.project.update({
     where: { id: project.id },

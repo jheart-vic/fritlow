@@ -36,6 +36,14 @@ export const swaggerSpec = swaggerJsdoc({
               description: 'Profile photo URL (Cloudinary). null → render initials.',
             },
             emailVerified: { type: 'boolean' },
+            platformRole: {
+              type: 'string',
+              enum: ['USER', 'SUPPORT', 'SUPERADMIN'],
+              description:
+                'Platform-level role — gate staff-only UI (e.g. an Admin nav link) on this. ' +
+                'USER for everyone who signs up. Rendering hint only: /admin routes re-read the ' +
+                'role from the database on every request, so a stale client value grants nothing.',
+            },
             createdAt: { type: 'string', format: 'date-time' },
           },
         },
@@ -60,6 +68,13 @@ export const swaggerSpec = swaggerJsdoc({
           properties: {
             id: { type: 'string', format: 'uuid' },
             name: { type: 'string' },
+            isPersonal: {
+              type: 'boolean',
+              description:
+                'The private workspace created at registration. Projects created without an ' +
+                'explicit workspaceId land here, and members CANNOT be invited into it (400) — ' +
+                'hide or disable the invite affordance when this is true.',
+            },
             createdAt: { type: 'string', format: 'date-time' },
             updatedAt: { type: 'string', format: 'date-time' },
           },
@@ -109,6 +124,10 @@ export const swaggerSpec = swaggerJsdoc({
             id: { type: 'string', format: 'uuid' },
             name: { type: 'string' },
             role: { type: 'string', enum: ['OWNER', 'ADMIN', 'MEMBER'] },
+            isPersonal: {
+              type: 'boolean',
+              description: 'See Workspace.isPersonal — invites into it are refused.',
+            },
             createdAt: { type: 'string', format: 'date-time' },
             updatedAt: { type: 'string', format: 'date-time' },
           },
@@ -530,6 +549,31 @@ export const swaggerSpec = swaggerJsdoc({
                               question: { type: 'string', description: 'The AI-generated follow-up question' },
                               answer: { type: 'string', nullable: true, description: "The founder's reply (null until sent via followUpAnswer)" },
                             },
+                          },
+                          source: {
+                            type: 'string',
+                            enum: ['document'],
+                            description:
+                              'Provenance. The KEY IS ABSENT when the founder typed the answer themselves — ' +
+                              'it is never null and never any other value. Present only on answers drafted ' +
+                              'by POST /discovery/prefill from an uploaded document. Test with ' +
+                              "`answer.source === 'document'`, not a null check.",
+                          },
+                          sourceDocumentId: {
+                            type: 'string',
+                            format: 'uuid',
+                            description:
+                              'The ProjectDocument this answer was drafted from. Present iff `source` is. ' +
+                              'Stored in JSONB with no foreign key, so it can point at a deleted document — ' +
+                              'handle a 404 if you link to it.',
+                          },
+                          needsReview: {
+                            type: 'boolean',
+                            description:
+                              'Present iff `source` is. true = drafted but not yet confirmed by the founder; ' +
+                              'false = they have submitted it. Submitting the question via POST /answers ' +
+                              '(edited or unchanged) flips it to false — that submit IS the review step. ' +
+                              'POST /discovery/complete is rejected while any answer still has true.',
                           },
                         },
                       },
