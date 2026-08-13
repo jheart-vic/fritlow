@@ -91,11 +91,30 @@ export async function inviteMember(
 ) {
   const actor = await assertManager(actorId, workspaceId);
 
-  const [workspace, inviter] = await Promise.all([
-    prisma.workspace.findUnique({ where: { id: workspaceId }, select: { name: true } }),
+  const [workspace, inviter, sharedProjectCount] = await Promise.all([
+    prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { name: true, isPersonal: true },
+    }),
     prisma.user.findUnique({ where: { id: actorId }, select: { fullName: true } }),
+    // What the invitee is about to gain access to. Membership is workspace-wide,
+    // so this is the honest number to put in front of the founder before they
+    // confirm — "add one collaborator" is never one project.
+    prisma.project.count({ where: { workspaceId } }),
   ]);
   const workspaceName = workspace?.name ?? 'a workspace';
+
+  // A personal workspace is where projects land by default, so it accumulates
+  // everything a founder has ever started. Inviting someone there would hand
+  // over that entire back catalogue as a side effect of adding one teammate —
+  // so it is refused outright, not merely warned about.
+  if (workspace?.isPersonal) {
+    throw ApiError.badRequest(
+      'You cannot invite people into your personal workspace — it stays private. ' +
+        'Create a shared workspace, move the projects you want to collaborate on into it, ' +
+        'and invite them there.',
+    );
+  }
 
   const user = await prisma.user.findUnique({ where: { email: input.email } });
 
@@ -115,7 +134,7 @@ export async function inviteMember(
       { workspaceName, inviterName: inviter?.fullName, role: input.role },
     );
 
-    return { pending: true as const, invitation };
+    return { pending: true as const, invitation, sharedProjectCount };
   }
 
   const existing = await prisma.workspaceMember.findUnique({
@@ -147,7 +166,7 @@ export async function inviteMember(
     data: { workspaceId },
   });
 
-  return { pending: false as const, member };
+  return { pending: false as const, member, sharedProjectCount };
 }
 
 export async function updateMemberRole(

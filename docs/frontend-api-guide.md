@@ -39,8 +39,15 @@ CORS note: the dev frontend origin must be in the server's `CORS_ORIGIN` env all
 The `user` object everywhere:
 
 ```json
-{ "id": "uuid", "email": "…", "fullName": "…", "emailVerified": false, "createdAt": "…" }
+{
+  "id": "uuid", "email": "…", "fullName": "…", "avatarUrl": null,
+  "emailVerified": false,
+  "platformRole": "USER",          // USER | SUPPORT | SUPERADMIN
+  "createdAt": "…"
+}
 ```
+
+**`platformRole`** is returned by login, register, verify-email, and `GET /auth/me` — gate staff-only UI on it (show an "Admin" nav link when it isn't `USER`). It's a **rendering hint only**: every `/admin` route re-reads the role from the database on each request, so a stale or tampered client value grants nothing. Note the platform roles are `USER | SUPPORT | SUPERADMIN` — there is no `ADMIN` at platform level (that's a *workspace* role, a different thing entirely).
 
 **Verification gates login**: register → "check your email" screen → user clicks the emailed link (frontend route `/verify-email?token=…` POSTs it to the API) → login. A 403 from login means unverified — offer the resend button. Tokens travel by email only; in dev the server console also logs them for testing.
 
@@ -53,10 +60,14 @@ Project statuses: `DRAFT → DISCOVERY → BLUEPRINT_COMPLETE → LAUNCHED`. The
 | Method + path | Body / query | Success | Notes |
 |---|---|---|---|
 | `POST /` | `{ name, oneLineIdea, category?, workspaceId? }` | **201** `{ project }` | Omit `workspaceId` → personal workspace. This is the create-project wizard's final submit |
-| `GET /` | `?status=DISCOVERY` optional | **200** `{ projects: [...] }` | Only projects in workspaces the user belongs to |
+| `GET /` | `?status=DISCOVERY`, `?workspaceId=…` — both optional | **200** `{ projects: [...] }` | Only projects in workspaces the user belongs to. **`workspaceId` scopes to one workspace** (for a workspace switcher); omit for all of them. 403 if you're not a member of the one you asked for |
 | `GET /:id` | — | **200** `{ project }` | 403 if not a member of its workspace, 404 if gone |
-| `PATCH /:id` | any of `{ name, oneLineIdea, category, status }` | **200** `{ project }` | Partial — send only what changed |
+| `PATCH /:id` | any of `{ name, oneLineIdea, category, status, workspaceId }` | **200** `{ project }` | Partial — send only what changed. **`workspaceId` moves the project** — see below |
 | `DELETE /:id` | — | **204** | OWNER/ADMIN of the workspace only → else 403 |
+
+**Access is workspace-wide, not per project.** Anyone in a workspace sees every project in it — closer to a GitHub org than a single repo. There is no per-project sharing. Two consequences worth designing around: a workspace switcher is the right primary navigation (hence `?workspaceId=`), and collaborating on one project means putting that project in a shared workspace.
+
+**Moving a project between workspaces** — `PATCH /:id` with `workspaceId`. This is how a founder takes something out of their private personal workspace to collaborate on it. Because it changes who can see the project (the destination's members gain access, the source's lose it), it requires **OWNER or ADMIN on both sides** — the same bar as deleting — and returns 403 otherwise.
 
 Every project object embeds its creator, so the UI can show "created by …" without a second request:
 
@@ -210,6 +221,8 @@ Pre-filled answers appear in the normal `GET /discovery` response, with two extr
   "needsReview": true                // ← still waiting on the founder
 }
 ```
+
+All three keys are **absent entirely** on answers the founder typed — they are never `null`, and `source` is never any value other than `"document"`. So test `answer.source === 'document'`, not `!= null`. (`sourceDocumentId` lives in JSONB with no foreign key, so it can point at a since-deleted document — handle a 404 if you link to it.)
 
 - **Badge every `source: "document"` answer** ("drafted from your PRD") so the founder knows what to check.
 - **`needsReview: true` means unconfirmed.** Submitting that question via `POST /answers` (edited or unchanged) clears the flag — that submit *is* the review step.
@@ -399,7 +412,7 @@ Tenancy management. Everyone gets a personal workspace at registration; these en
 | `POST /` | `{ name }` | **201** `{ workspace }` | You become OWNER. `workspace` includes your `role`. |
 | `GET /` | — | **200** `{ workspaces }` | Every workspace you belong to, each with your `role`. |
 | `GET /:workspaceId/members` | — | **200** `{ members }` | Any member may view. 403 if not a member. |
-| `POST /:workspaceId/members/invite` | `{ email, role? }` | **201** `{ member }` _or_ `{ pending: true, invitation }` | OWNER/ADMIN only. `role` ∈ `ADMIN\|MEMBER` (default MEMBER). **Existing account** → added immediately (`{ member }`) + heads-up email. **Unknown email** → a PENDING invitation is recorded (`{ pending: true, invitation }`) and a signup email sent; they auto-join when they register with that email. `409` only if the existing user is already a member. All emails are best-effort/fire-and-forget. |
+| `POST /:workspaceId/members/invite` | `{ email, role? }` | **201** `{ member, sharedProjectCount }` _or_ `{ pending: true, invitation, sharedProjectCount }` | OWNER/ADMIN only. `role` ∈ `ADMIN\|MEMBER` (default MEMBER). **Existing account** → added immediately (`{ member }`) + heads-up email. **Unknown email** → a PENDING invitation is recorded (`{ pending: true, invitation }`) and a signup email sent; they auto-join when they register with that email. `409` only if the existing user is already a member. **`400` if the workspace is personal** — see below. All emails are best-effort/fire-and-forget. |
 | `PATCH /:workspaceId/members/:userId` | `{ role }` | **200** `{ member }` | OWNER/ADMIN only. |
 | `DELETE /:workspaceId/members/:userId` | — | **204** | OWNER/ADMIN only. |
 
@@ -407,7 +420,26 @@ Member: `{ userId, role, createdAt, user: { id, fullName, email } }`.
 
 RBAC guardrails (all return a clear 4xx): only an **OWNER** may grant the OWNER role or change/remove an existing owner; a workspace must always keep **at least one owner** (last-owner demote/remove → 400); MEMBERs can't manage anyone (403).
 
-Note: renaming a workspace still lives at `PATCH /settings/workspaces/:workspaceId` (§10). Inviting people who don't yet have an account now works (see the invite row above): a PENDING invitation is stored and consumed automatically when that email registers. There is no explicit accept/revoke endpoint yet.
+### Personal workspaces can't be shared ⚠️
+
+Every workspace object now carries **`isPersonal`**. The personal workspace is the one created at registration; projects created without an explicit `workspaceId` land there, so over time it holds everything the founder has ever started.
+
+**`POST /members/invite` on a personal workspace returns 400.** Inviting one collaborator there would hand over that entire back catalogue, so it's refused rather than warned about. The UI should:
+
+1. **Hide or disable the invite affordance** when `isPersonal` is true, rather than letting the founder discover this via an error.
+2. Offer the real path instead: **create a shared workspace** (`POST /workspaces`) → **move the relevant projects into it** (`PATCH /projects/:id` with `workspaceId`, §2) → **invite there**.
+
+This is the one breaking change in this batch: an invite flow that assumed "pick a person, send" now needs a workspace step in front of it.
+
+### `sharedProjectCount` — tell the founder what they're exposing
+
+Every invite response includes `sharedProjectCount`: how many projects the invitee will be able to see. Because membership is workspace-wide, "add one collaborator" is never "share one project". Put it on the confirm step:
+
+> *"Ada will be able to see all **12** projects in Acme Team."*
+
+You can read the same number ahead of time from `GET /projects?workspaceId=…`.
+
+Note: renaming a workspace still lives at `PATCH /settings/workspaces/:workspaceId` (§10). Inviting people who don't yet have an account works (see the invite row above): a PENDING invitation is stored and consumed automatically when that email registers. **Existing users are added immediately with no accept step** — there is no accept endpoint yet, so an invite is an instant grant.
 
 ---
 

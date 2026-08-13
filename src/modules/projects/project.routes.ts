@@ -48,7 +48,10 @@ projectRouter.use(requireAuth);
  *   get:
  *     tags: [Projects]
  *     summary: List projects you can access
- *     description: Returns projects from every workspace you belong to, most recently updated first.
+ *     description: >
+ *       Returns projects from every workspace you belong to, most recently updated first.
+ *       Pass `workspaceId` to scope the list to one workspace (for a workspace switcher) —
+ *       each project also carries its own `workspaceId` if you'd rather group client-side.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -56,6 +59,13 @@ projectRouter.use(requireAuth);
  *         name: status
  *         schema: { type: string, enum: [DRAFT, DISCOVERY, BLUEPRINT_COMPLETE, LAUNCHED] }
  *         description: Filter by lifecycle status
+ *       - in: query
+ *         name: workspaceId
+ *         schema: { type: string, format: uuid }
+ *         description: >
+ *           Only projects in this workspace. Omit for all workspaces you belong to.
+ *           403 if you are not a member of it (rather than an empty list, which would
+ *           look like the workspace is empty).
  *     responses:
  *       200:
  *         description: Projects list
@@ -105,8 +115,14 @@ projectRouter.get('/', projectController.list);
  *             schema: { $ref: '#/components/schemas/Error' }
  *   patch:
  *     tags: [Projects]
- *     summary: Update a project (name, idea, category, status)
- *     description: Partial update — send only the fields you want to change.
+ *     summary: Update a project (name, idea, category, status, workspace)
+ *     description: >
+ *       Partial update — send only the fields you want to change.
+ *       Sending `workspaceId` MOVES the project to another workspace, which changes who
+ *       can see it: everyone in the destination workspace gains access and everyone in
+ *       the source workspace loses it. That requires OWNER or ADMIN on **both** sides
+ *       (the same bar as deleting) — 403 otherwise. This is the intended way to take a
+ *       project out of your private personal workspace so you can collaborate on it.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -125,6 +141,10 @@ projectRouter.get('/', projectController.list);
  *               oneLineIdea: { type: string, maxLength: 300 }
  *               category: { type: string, maxLength: 60, nullable: true }
  *               status: { type: string, enum: [DRAFT, DISCOVERY, BLUEPRINT_COMPLETE, LAUNCHED] }
+ *               workspaceId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: "Move the project to this workspace. Requires OWNER/ADMIN on both the current and the destination workspace."
  *     responses:
  *       200:
  *         description: Updated project

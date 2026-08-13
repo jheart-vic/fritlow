@@ -18,6 +18,9 @@ export const updateProjectSchema = z
     oneLineIdea: z.string().trim().min(1).max(300),
     category: z.string().trim().min(1).max(60).nullable(),
     status: z.enum(projectStatusValues),
+    // Move the project to another workspace — this CHANGES WHO CAN SEE IT
+    // (membership is workspace-wide), so it needs OWNER/ADMIN on both sides.
+    workspaceId: z.uuid(),
   })
   .partial() // every field optional — send only what changes
   .refine((data) => Object.keys(data).length > 0, {
@@ -26,6 +29,9 @@ export const updateProjectSchema = z
 
 export const listProjectsQuerySchema = z.object({
   status: z.enum(projectStatusValues).optional(),
+  // Scope the list to one workspace. Omit for every project across every
+  // workspace you belong to (the previous, and still default, behaviour).
+  workspaceId: z.uuid().optional(),
 });
 
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;

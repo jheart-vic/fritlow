@@ -104,6 +104,17 @@ workspaceRouter.get('/:workspaceId/members', workspaceController.listMembers);
  *       (response `{ member }`) and emailed a heads-up. If not, a PENDING invitation is recorded and
  *       a signup email is sent (response `{ pending: true, invitation }`); they auto-join the workspace
  *       when they register with that email. OWNER is not grantable here — use the role endpoint.
+ *
+ *
+ *       **Personal workspaces cannot be invited into (400).** A personal workspace holds every
+ *       project its owner created without naming a workspace, so an invite there would expose
+ *       their whole back catalogue. Create a shared workspace, move projects into it with
+ *       `PATCH /projects/{id}` (`workspaceId`), and invite there.
+ *
+ *
+ *       Every response includes **`sharedProjectCount`** — how many projects the invitee will be
+ *       able to see, because membership is workspace-wide, not per project. Show it on the
+ *       confirm step ("Ada will be able to see all 12 projects in this workspace").
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -131,11 +142,17 @@ workspaceRouter.get('/:workspaceId/members', workspaceController.listMembers);
  *                 - type: object
  *                   properties:
  *                     member: { $ref: '#/components/schemas/WorkspaceMember' }
+ *                     sharedProjectCount: { type: integer, example: 12, description: "Projects in this workspace the invitee can now see." }
  *                 - type: object
  *                   properties:
  *                     pending: { type: boolean, example: true }
  *                     invitation: { $ref: '#/components/schemas/WorkspaceInvitation' }
- *       400: { $ref: '#/components/responses/ValidationError' }
+ *                     sharedProjectCount: { type: integer, example: 12 }
+ *       400:
+ *         description: Validation error, or the target is a personal workspace (which cannot be shared)
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
  *       403:
  *         description: Not an owner/admin
  *         content:

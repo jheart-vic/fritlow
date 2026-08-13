@@ -17,7 +17,7 @@ adminRouter.use(requirePlatformRole('SUPERADMIN', 'SUPPORT'));
  *   get:
  *     tags: [Admin]
  *     summary: Platform-wide metrics (Fritlow staff only)
- *     description: Aggregate counts across ALL workspaces — users, projects by status, discovery completion, blueprints, recommendations, exports, plus a 7-day activity proxy. Requires platformRole SUPPORT or ADMIN.
+ *     description: Aggregate counts across ALL workspaces — users, projects by status, discovery completion, blueprints, recommendations, exports, plus a 7-day activity proxy. Requires platformRole SUPPORT or SUPERADMIN.
  *     security:
  *       - bearerAuth: []
  *     responses:
