@@ -72,25 +72,29 @@ export async function sendVerificationEmail(
 
 export async function sendWorkspaceInviteEmail(
   to: { email: string; name?: string },
-  details: { workspaceName: string; inviterName?: string; role: string },
+  details: { workspaceName: string; inviterName?: string; role: string; token?: string },
 ): Promise<void> {
-  // Existing users only — they already have an account, so we point them at the
-  // app rather than a signup flow. (Inviting non-users by email is deferred to v1.1.)
-  const link = `${env.APP_URL}/workspaces`;
-  const inviter = details.inviterName ? `${details.inviterName} added you` : 'You have been added';
+  // The invitee already has an account, but is NOT a member yet — they have to
+  // accept first. The link carries the invitation token so the click itself is
+  // the acceptance; without one (legacy invites) they land on the list and
+  // accept from there.
+  const link = details.token
+    ? `${env.APP_URL}/invitations/${encodeURIComponent(details.token)}`
+    : `${env.APP_URL}/invitations`;
+  const inviter = details.inviterName ? `${details.inviterName} has invited you` : 'You have been invited';
   const roleLabel = details.role.toLowerCase();
   await sendSafely(
     {
       to,
-      subject: `You've been added to ${details.workspaceName} — Fritlow`,
+      subject: `${details.inviterName ? `${details.inviterName} invited you` : "You're invited"} to ${details.workspaceName} — Fritlow`,
       html: layout(
-        `You're now part of ${details.workspaceName}`,
+        `Join ${details.workspaceName} on Fritlow`,
         `<p style="margin:0;color:#374151;font-size:14px;line-height:1.6">
-           Hi${to.name ? ` ${to.name}` : ''}, ${inviter} to the
+           Hi${to.name ? ` ${to.name}` : ''}, ${inviter} to collaborate in the
            <strong>${details.workspaceName}</strong> workspace on Fritlow as a <strong>${roleLabel}</strong>.
-           Open your workspaces to start collaborating.
+           You'll get access to every project in that workspace once you accept.
          </p>
-         ${button(link, 'Open Fritlow')}`,
+         ${button(link, 'View invitation')}`,
       ),
     },
     'workspace invite email',
@@ -99,11 +103,16 @@ export async function sendWorkspaceInviteEmail(
 
 export async function sendWorkspaceSignupInviteEmail(
   to: { email: string },
-  details: { workspaceName: string; inviterName?: string; role: string },
+  details: { workspaceName: string; inviterName?: string; role: string; token?: string },
 ): Promise<void> {
-  // The invitee has NO Fritlow account yet. Point them at signup — once they
-  // register with this email, they auto-join the workspace (see auth.service).
-  const link = `${env.APP_URL}/register?email=${encodeURIComponent(to.email)}`;
+  // The invitee has NO Fritlow account yet. Point them at signup carrying the
+  // invitation token: registering through this link counts as accepting, so
+  // they land straight in the workspace. Registering WITHOUT the token leaves
+  // the invitation pending for them to accept in-app — signing up is not by
+  // itself consent to join someone else's workspace.
+  const link = details.token
+    ? `${env.APP_URL}/register?email=${encodeURIComponent(to.email)}&invitation=${encodeURIComponent(details.token)}`
+    : `${env.APP_URL}/register?email=${encodeURIComponent(to.email)}`;
   const inviter = details.inviterName ? `${details.inviterName} has invited you` : 'You have been invited';
   const roleLabel = details.role.toLowerCase();
   await sendSafely(

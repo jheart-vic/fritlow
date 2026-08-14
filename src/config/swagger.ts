@@ -68,12 +68,14 @@ export const swaggerSpec = swaggerJsdoc({
           properties: {
             id: { type: 'string', format: 'uuid' },
             name: { type: 'string' },
-            isPersonal: {
+            isPrivate: {
               type: 'boolean',
               description:
-                'The private workspace created at registration. Projects created without an ' +
-                'explicit workspaceId land here, and members CANNOT be invited into it (400) — ' +
-                'hide or disable the invite affordance when this is true.',
+                'Members CANNOT be invited into a private workspace (400) — hide or disable the ' +
+                'invite affordance when this is true. A user may own any number of private ' +
+                'workspaces, or none. NOTE: this does NOT mean "projects land here" — that is ' +
+                'the separate default workspace (see WorkspaceMembership.isDefault). Renamed ' +
+                'from `isPersonal`, which conflated the two.',
             },
             createdAt: { type: 'string', format: 'date-time' },
             updatedAt: { type: 'string', format: 'date-time' },
@@ -124,9 +126,17 @@ export const swaggerSpec = swaggerJsdoc({
             id: { type: 'string', format: 'uuid' },
             name: { type: 'string' },
             role: { type: 'string', enum: ['OWNER', 'ADMIN', 'MEMBER'] },
-            isPersonal: {
+            isPrivate: {
               type: 'boolean',
-              description: 'See Workspace.isPersonal — invites into it are refused.',
+              description: 'See Workspace.isPrivate — invites into it are refused.',
+            },
+            isDefault: {
+              type: 'boolean',
+              description:
+                'True for the ONE workspace where this caller\'s new projects land when ' +
+                'POST /projects names no workspaceId. Per-caller, not a property of the ' +
+                'workspace itself — the same shared workspace can be the default for one ' +
+                'member and not another. Change it with POST /workspaces/{id}/set-default.',
             },
             createdAt: { type: 'string', format: 'date-time' },
             updatedAt: { type: 'string', format: 'date-time' },
@@ -448,16 +458,31 @@ export const swaggerSpec = swaggerJsdoc({
         WorkspaceInvitation: {
           type: 'object',
           description:
-            'A pending invitation to an email with no Fritlow account yet. Consumed (→ membership) when that email registers.',
+            'An invitation to join a workspace. Created for EVERY invite, whether or not the ' +
+            'email has an account — membership exists only once the invitee accepts.',
           properties: {
             id: { type: 'string', format: 'uuid' },
             email: { type: 'string', format: 'email' },
             role: { type: 'string', enum: ['ADMIN', 'MEMBER'] },
-            status: { type: 'string', enum: ['PENDING', 'ACCEPTED', 'REVOKED'] },
+            status: {
+              type: 'string',
+              enum: ['PENDING', 'ACCEPTED', 'REVOKED', 'DECLINED', 'EXPIRED'],
+              description:
+                'PENDING = awaiting the invitee. ACCEPTED = they joined. DECLINED = they said ' +
+                'no. REVOKED = the inviter cancelled. EXPIRED = nobody acted before expiresAt.',
+            },
             workspaceId: { type: 'string', format: 'uuid' },
             invitedById: { type: 'string', format: 'uuid' },
             createdAt: { type: 'string', format: 'date-time' },
             acceptedAt: { type: 'string', format: 'date-time', nullable: true },
+            expiresAt: {
+              type: 'string',
+              format: 'date-time',
+              nullable: true,
+              description:
+                'When the invitation stops being actionable (14 days from send). Null on ' +
+                'invitations created before expiry existed — those never expire.',
+            },
           },
         },
         Template: {

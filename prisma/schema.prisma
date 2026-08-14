@@ -30,12 +30,17 @@ enum PlatformRole {
   SUPERADMIN
 }
 
-// Lifecycle of an invitation sent to an email that has no account yet.
-// PENDING → ACCEPTED (consumed when that email registers) or REVOKED.
+// Lifecycle of a workspace invitation.
+// PENDING → ACCEPTED (the invitee joined), DECLINED (the invitee said no),
+// REVOKED (the inviter cancelled), or EXPIRED (nobody acted in time).
+// DECLINED and REVOKED are kept distinct so the inviter can tell "they turned
+// me down" from "I changed my mind" when looking at the history.
 enum InvitationStatus {
   PENDING
   ACCEPTED
   REVOKED
+  DECLINED
+  EXPIRED
 }
 
 // Who authored a chat message in the project AI assistant.
@@ -53,6 +58,14 @@ enum NotificationType {
   COMMENT_ADDED
   RECOMMENDATION_CREATED
   GROUP_MENTION
+  // A project left a workspace you belong to, so you can no longer see it.
+  // Sent because a move is otherwise silent — the project simply vanishes
+  // from the dashboards of everyone who had access.
+  PROJECT_MOVED
+  // A workspace you belonged to was deleted by its owner, taking every
+  // project in it. Nothing survives to link to, so this is the only record
+  // the other members get that their work is gone.
+  WORKSPACE_DELETED
 }
 
 // Support conversation lifecycle (Fritlow staff ↔ a user).
@@ -92,6 +105,14 @@ model User {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
+  // Where projects land when the caller doesn't name a workspace. Explicit
+  // pointer rather than "whichever workspace looks personal" — a user may own
+  // several private workspaces, so the default has to be stated, not inferred.
+  // SetNull (not Cascade) because losing the workspace must not delete the user;
+  // a null pointer makes createProject ask them to pick instead of guessing.
+  defaultWorkspace   Workspace? @relation("UserDefaultWorkspace", fields: [defaultWorkspaceId], references: [id], onDelete: SetNull)
+  defaultWorkspaceId String?
+
   memberships        WorkspaceMember[]
   blueprintSectionsUpdated BlueprintSection[] @relation("BlueprintSectionUpdatedBy")
   refreshTokens      RefreshToken[]
@@ -112,19 +133,26 @@ model User {
   groupMessages        GroupMessage[]     @relation("GroupMessageSender")
   groupChannelReads    GroupChannelRead[]
   uploadedDocuments    ProjectDocument[]
+
+  // Postgres does not index foreign keys automatically. Without this, deleting
+  // a workspace seq-scans User to apply the SetNull.
+  @@index([defaultWorkspaceId])
 }
 
-// Tenancy root: every project will live inside a workspace.
-// Users get a personal workspace automatically at registration.
+// Tenancy root: every project lives inside a workspace, and workspace
+// membership is the ONLY sharing boundary — access is never per project.
+// Users get one private workspace automatically at registration.
 model Workspace {
   id        String   @id @default(uuid())
   name      String
-  // The private workspace created for a user at registration. It holds every
-  // project they create without naming a workspace, so it is NOT a place to
-  // invite collaborators into — inviting there would expose their whole
-  // back catalogue. The invite endpoint refuses it; founders create a named
-  // workspace to collaborate and move projects into it.
-  isPersonal Boolean @default(false)
+  // Private = collaborators can never be invited here; the invite endpoint
+  // refuses it outright rather than warning, because membership is
+  // workspace-wide and would hand over every project in one go.
+  //
+  // This flag says NOTHING about where new projects land — that is
+  // User.defaultWorkspaceId. Keeping the two apart is what lets a user hold
+  // several private workspaces (or none) without new projects going astray.
+  isPrivate Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -132,6 +160,9 @@ model Workspace {
   projects    Project[]
   invitations WorkspaceInvitation[]
   channels    GroupChannel[]
+  // Users pointing here as their default. Named relation because User already
+  // reaches Workspace through WorkspaceMember; Prisma needs them disambiguated.
+  defaultForUsers User[] @relation("UserDefaultWorkspace")
 }
 
 enum AiCallStatus {
@@ -460,6 +491,14 @@ model GroupChannel {
   reads    GroupChannelRead[]
 
   @@index([workspaceId])
+  // One channel name per workspace. Enforced in the database because the
+  // "create 'general' if none exists" checks in workspace.service run as
+  // check-then-insert: under Postgres READ COMMITTED two concurrent
+  // transactions can both see no channel and both insert. A unique index is
+  // the only thing that sees across concurrent writers — and it also
+  // guarantees converting a workspace private → shared → private reuses the
+  // existing channel instead of stacking up duplicates.
+  @@unique([workspaceId, name])
 }
 
 model GroupMessage {
@@ -676,10 +715,15 @@ model WorkspaceMember {
   @@unique([userId, workspaceId])
 }
 
-// An invite sent to an email that has no Fritlow account yet. When that email
-// registers, any PENDING invitations are consumed and turned into memberships
-// (auto-join). Invitations for emails that DO have an account are never stored
-// here — those become memberships immediately.
+// An invite to join a workspace. EVERY invite lands here first, whether or not
+// the email already has a Fritlow account — membership is only created when
+// the invitee accepts. Being added to a workspace without consent would put
+// someone else's projects in your sidebar on a stranger's say-so.
+//
+// Two ways an invitation is accepted:
+//   - an existing user calls POST /invitations/{id}/accept
+//   - a new user registers THROUGH the invite link (the token is the consent)
+// Signing up independently leaves the invite PENDING for them to act on.
 model WorkspaceInvitation {
   id          String           @id @default(uuid())
   email       String // lowercased, matches the email a future user registers with
@@ -687,6 +731,15 @@ model WorkspaceInvitation {
   status      InvitationStatus @default(PENDING)
   createdAt   DateTime         @default(now())
   acceptedAt  DateTime?
+
+  // SHA-256 of the token in the emailed link — same pattern as RefreshToken:
+  // if the database leaks, the links in it are not usable. Nullable so invites
+  // created before this column existed keep working through the in-app list
+  // (they just have no clickable email link).
+  tokenHash String? @unique
+  // Invitations go stale. A PENDING row past this instant is treated as
+  // EXPIRED on read, so no scheduled job is needed to sweep them.
+  expiresAt DateTime?
 
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   workspaceId String

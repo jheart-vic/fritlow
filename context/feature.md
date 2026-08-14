@@ -2,7 +2,22 @@
 
 > Update this file whenever the active feature changes. One feature in focus at a time.
 
-## Active: building PRD-MVP gaps in priority order (started 2026-08-08)
+## Active: Workspace access model — DONE 2026-08-14 (Session 23)
+
+Client-driven rework of who can see what. All six phases built, migrations applied to dev + test, 59 tests passing. Full detail in [session.md](session.md) Session 23.
+
+- **Private vs shared is now a choice at creation** — `visibility: 'PRIVATE' | 'SHARED'` on `POST /workspaces`. Safe because `isPersonal` was split into `Workspace.isPrivate` ("invites refused", any number) and `User.defaultWorkspaceId` ("projects land here", exactly one). Terminology is **SHARED, never PUBLIC** — invite-only, not discoverable.
+- **Invitations require acceptance.** Nobody joins a workspace without consenting. New `/api/v1/invitations` router (list/accept/decline) + `DELETE /workspaces/:id/members/me` to leave.
+- **Moves are no longer silent.** `PROJECT_MOVED` notifications to everyone who loses access (set difference, so people in both workspaces aren't wrongly told), plus `move-preview` endpoints so the confirm dialog names the count.
+- **Bulk move** (`POST /projects/move`, all-or-nothing, max 50) is the precise alternative to converting a whole workspace; `convert-to-private` closes the loop, sole-member only.
+
+**⚠️ Three breaking contract changes are queued for the frontend dev — see session.md Session 23 "Breaking changes". Send before they build against the old shapes.**
+
+- **Workspace delete** (added same session, closing the gap the phase plan flagged). `DELETE /workspaces/:id` + `GET /workspaces/:id/delete-preview`. **OWNER only** — an ADMIN cannot destroy a workspace. Guarded by type-the-name confirmation, refusal to delete your last owned workspace, and a required `newDefaultWorkspaceId` when deleting your default. Other members get a `WORKSPACE_DELETED` notification.
+
+---
+
+## Previous: building PRD-MVP gaps in priority order (started 2026-08-08)
 
 Working the highest-priority unbuilt MVP items first. Priority order **reconciled 2026-08-08 with the frontend dev's build spec** (full detail + the reconciled order in [prd-backlog.md](prd-backlog.md) §8–§9):
 

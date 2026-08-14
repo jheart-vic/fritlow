@@ -26,6 +26,14 @@ interface DashboardProject {
   discoveryProgress: { answered: number; total: number } | null;
   hasBlueprint: boolean;
   nextAction: NextAction;
+  // Which workspace this project lives in. The dashboard aggregates across
+  // every workspace the caller belongs to, so without this a collaborator sees
+  // their own drafts and four clients' projects in one undifferentiated list —
+  // and a project appearing there the day they accept an invite reads as a
+  // leak rather than the access they were granted.
+  workspace: { id: string; name: string; isPrivate: boolean };
+  // Did the caller create this? Drives the headline recommendation.
+  isMine: boolean;
 }
 
 function buildNextAction(project: {
@@ -56,18 +64,27 @@ function buildNextAction(project: {
   return { type: 'CELEBRATE', label: 'Launched — keep iterating', projectId: project.id };
 }
 
-export async function getDashboard(userId: string): Promise<{
+export async function getDashboard(
+  userId: string,
+  // Optional narrowing to one workspace, matching what listProjects accepts.
+  // Without it the dashboard spans every workspace the caller belongs to.
+  workspaceId?: string,
+): Promise<{
   projects: DashboardProject[];
   nextAction: NextAction | null;
 }> {
   const projects = await prisma.project.findMany({
-    where: { workspace: { members: { some: { userId } } } },
+    where: {
+      workspace: { members: { some: { userId } } },
+      ...(workspaceId ? { workspaceId } : {}),
+    },
     orderBy: { updatedAt: 'desc' },
     include: {
       discoverySession: {
         select: { status: true, questionPlan: true, _count: { select: { answers: true } } },
       },
       blueprint: { select: { id: true } },
+      workspace: { select: { id: true, name: true, isPrivate: true } },
     },
   });
 
@@ -94,12 +111,25 @@ export async function getDashboard(userId: string): Promise<{
         session,
         hasBlueprint: Boolean(p.blueprint),
       }),
+      workspace: p.workspace,
+      isMine: p.createdById === userId,
     };
   });
 
-  // "Continue where you left off" = the most recently touched project.
+  // "Continue where you left off" — biased to the caller's OWN most recently
+  // touched project, falling back to recency across everything they can see.
+  //
+  // Pure recency breaks for collaborators: someone who joins a busy workspace
+  // opens Fritlow and the headline tells them to continue a teammate's
+  // discovery interview, because that teammate edited it ten minutes ago.
+  // Correct by permissions, wrong by intent — the dashboard's job is "what
+  // should *I* do next?". Projects stay sorted by recency regardless; this
+  // only picks the one action promoted to the banner.
+  const headline =
+    dashboardProjects.find((p) => p.isMine) ?? dashboardProjects[0];
+
   return {
     projects: dashboardProjects,
-    nextAction: dashboardProjects[0]?.nextAction ?? null,
+    nextAction: headline?.nextAction ?? null,
   };
 }

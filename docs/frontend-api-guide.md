@@ -6,6 +6,7 @@ Everything the frontend needs to consume the V1 backend, plus a full Postman wal
 - Interactive spec (source of truth): `http://localhost:4000/docs` — raw OpenAPI JSON at `/docs.json`
 - All request bodies: `Content-Type: application/json` (except where noted)
 - Detailed email-verification guide: [auth-email-verification.md](auth-email-verification.md)
+- **Recent contract changes: [CHANGELOG.md](CHANGELOG.md)** — start here if you've built against this guide before
 
 ---
 
@@ -26,7 +27,7 @@ CORS note: the dev frontend origin must be in the server's `CORS_ORIGIN` env all
 
 | Method + path | Body | Success | Notes |
 |---|---|---|---|
-| `POST /register` | `{ fullName, email, password (min 8) }` | **201** `{ user, message }` — **no tokens, no cookie** | 409 if email taken. Creates the user + personal workspace and emails a verification link. The user must verify, then log in |
+| `POST /register` | `{ fullName, email, password (min 8), invitationToken? }` | **201** `{ user, message }` — **no tokens, no cookie** | 409 if email taken. Creates the user + their private workspace (set as their default) and emails a verification link. The user must verify, then log in. **`invitationToken`**: pass the `invitation` query param through from a workspace invite link (`/register?email=…&invitation=…`) — registering via that link counts as accepting, so they join on first login. Omit it and the invitation stays pending for them to accept in-app. An invalid/expired token is ignored, never fatal |
 | `POST /login` | `{ email, password }` | **200** `{ user, accessToken }` + cookie | 401 on bad credentials (same error for wrong email vs wrong password). **403 if the email is not verified yet** — show a "verify first" screen with a resend button |
 | `POST /refresh` | `{}` (cookie) or `{ refreshToken }` fallback | **200** `{ accessToken }` + new cookie | Old refresh token is revoked — a replayed one 401s |
 | `POST /logout` | `{}` (cookie) | **204**, cookie cleared | |
@@ -59,7 +60,7 @@ Project statuses: `DRAFT → DISCOVERY → BLUEPRINT_COMPLETE → LAUNCHED`. The
 
 | Method + path | Body / query | Success | Notes |
 |---|---|---|---|
-| `POST /` | `{ name, oneLineIdea, category?, workspaceId? }` | **201** `{ project }` | Omit `workspaceId` → personal workspace. This is the create-project wizard's final submit |
+| `POST /` | `{ name, oneLineIdea, category?, workspaceId? }` | **201** `{ project }` | Omit `workspaceId` → the caller's **default** workspace (the one flagged `isDefault` in `GET /workspaces`). 400 if they have no default — prompt them to pick a workspace. This is the create-project wizard's final submit |
 | `GET /` | `?status=DISCOVERY`, `?workspaceId=…` — both optional | **200** `{ projects: [...] }` | Only projects in workspaces the user belongs to. **`workspaceId` scopes to one workspace** (for a workspace switcher); omit for all of them. 403 if you're not a member of the one you asked for |
 | `GET /:id` | — | **200** `{ project }` | 403 if not a member of its workspace, 404 if gone |
 | `PATCH /:id` | any of `{ name, oneLineIdea, category, status, workspaceId }` | **200** `{ project }` | Partial — send only what changed. **`workspaceId` moves the project** — see below |
@@ -67,7 +68,11 @@ Project statuses: `DRAFT → DISCOVERY → BLUEPRINT_COMPLETE → LAUNCHED`. The
 
 **Access is workspace-wide, not per project.** Anyone in a workspace sees every project in it — closer to a GitHub org than a single repo. There is no per-project sharing. Two consequences worth designing around: a workspace switcher is the right primary navigation (hence `?workspaceId=`), and collaborating on one project means putting that project in a shared workspace.
 
-**Moving a project between workspaces** — `PATCH /:id` with `workspaceId`. This is how a founder takes something out of their private personal workspace to collaborate on it. Because it changes who can see the project (the destination's members gain access, the source's lose it), it requires **OWNER or ADMIN on both sides** — the same bar as deleting — and returns 403 otherwise.
+**Moving a project between workspaces** — `PATCH /:id` with `workspaceId`. This is how a founder takes something out of a private workspace to collaborate on it. Because it changes who can see the project (the destination's members gain access, the source's lose it), it requires **OWNER or ADMIN on both sides** — the same bar as deleting — and returns 403 otherwise.
+
+Call **`GET /:id/move-preview?workspaceId=…`** first and show the result: *"3 people will lose access to this project."* It returns `losingAccess: { count, users }` (named, so you can show faces) and `gainingAccess: { count }`. People in **both** workspaces are excluded — they notice nothing. Everyone who loses access gets a `PROJECT_MOVED` notification.
+
+**Moving several at once** — `POST /projects/move` with `{ projectIds[], targetWorkspaceId }` (max 50, all-or-nothing), previewed by `POST /projects/move-preview` with the same body. **Prefer this in the UI over converting a whole workspace to shared** — it's the precise option and much harder to regret. Requires OWNER/ADMIN on the destination and on every source workspace in the selection.
 
 Every project object embeds its creator, so the UI can show "created by …" without a second request:
 
@@ -360,14 +365,24 @@ The "what should I do next?" screen in one call:
       "id": "…", "name": "…", "oneLineIdea": "…", "status": "DISCOVERY", "updatedAt": "…",
       "discoveryProgress": { "answered": 4, "total": 12 },
       "hasBlueprint": false,
-      "nextAction": { "type": "CONTINUE_DISCOVERY", "label": "Continue the interview (4/10 answered)", "projectId": "…" }
+      "nextAction": { "type": "CONTINUE_DISCOVERY", "label": "Continue the interview (4/10 answered)", "projectId": "…" },
+      "workspace": { "id": "…", "name": "Acme Team", "isPrivate": false },
+      "isMine": true
     }
   ],
-  "nextAction": { …the top action — belongs to the most recently touched project… }
+  "nextAction": { …the top action — prefers the caller's OWN most recent project… }
 }
 ```
 
 `nextAction.type` is one of: `START_DISCOVERY`, `CONTINUE_DISCOVERY`, `COMPLETE_DISCOVERY`, `GENERATE_BLUEPRINT`, `REVIEW_BLUEPRINT`, `CELEBRATE`. Map each to a route + button; the `label` is ready-made display copy. Top-level `nextAction` is `null` when the user has no projects → show the create-project CTA.
+
+### Label every card with its workspace ⚠️
+
+This endpoint spans **every workspace the caller belongs to**. A freelancer in four client workspaces sees their own drafts and four clients' projects in one list — so render `workspace.name` on each card (or group by it), otherwise a project appearing there the moment they accept an invite reads as a leak rather than as the access they were just granted.
+
+`GET /api/v1/dashboard?workspaceId=…` narrows to one workspace, matching `GET /projects`.
+
+`isMine` means the caller created the project. The top-level `nextAction` prefers their own most recently touched project over pure recency — otherwise someone joining a busy workspace gets told to continue *a teammate's* interview.
 
 ---
 
@@ -405,41 +420,72 @@ Ids: `saas`, `marketplace`, `mobile_app`, `fintech`, `edtech`, `healthtech`, `so
 
 ## 12. Workspaces — `/api/v1/workspaces` (Bearer required)
 
-Tenancy management. Everyone gets a personal workspace at registration; these endpoints add more and manage membership. Roles: `OWNER`, `ADMIN`, `MEMBER`.
+> **Reworked 2026-08-14.** Field renames and a changed invite response — see [CHANGELOG.md](CHANGELOG.md) for the migration notes.
+
+Tenancy management. Everyone gets one **private** workspace at registration; these endpoints add more and manage membership. Roles: `OWNER`, `ADMIN`, `MEMBER`.
 
 | Method + path | Body | Success | Notes |
 |---|---|---|---|
-| `POST /` | `{ name }` | **201** `{ workspace }` | You become OWNER. `workspace` includes your `role`. |
-| `GET /` | — | **200** `{ workspaces }` | Every workspace you belong to, each with your `role`. |
+| `POST /` | `{ name, visibility?, setAsDefault? }` | **201** `{ workspace }` | You become OWNER. `visibility` ∈ `PRIVATE\|SHARED` (default SHARED). |
+| `GET /` | — | **200** `{ workspaces }` | Every workspace you belong to, each with your `role`, `isPrivate` and `isDefault`. |
+| `POST /:workspaceId/set-default` | — | **200** `{ workspace }` | **OWNER only.** Where new projects land. Response `warning` is non-null when the target is shared — show it. |
 | `GET /:workspaceId/members` | — | **200** `{ members }` | Any member may view. 403 if not a member. |
-| `POST /:workspaceId/members/invite` | `{ email, role? }` | **201** `{ member, sharedProjectCount }` _or_ `{ pending: true, invitation, sharedProjectCount }` | OWNER/ADMIN only. `role` ∈ `ADMIN\|MEMBER` (default MEMBER). **Existing account** → added immediately (`{ member }`) + heads-up email. **Unknown email** → a PENDING invitation is recorded (`{ pending: true, invitation }`) and a signup email sent; they auto-join when they register with that email. `409` only if the existing user is already a member. **`400` if the workspace is personal** — see below. All emails are best-effort/fire-and-forget. |
+| `POST /:workspaceId/members/invite` | `{ email, role? }` | **201** `{ pending: true, hasAccount, invitation, sharedProjectCount }` | OWNER/ADMIN only. `role` ∈ `ADMIN\|MEMBER` (default MEMBER). **No membership is created** — see below. `409` if the user is already a member. **`400` if the workspace is private.** |
 | `PATCH /:workspaceId/members/:userId` | `{ role }` | **200** `{ member }` | OWNER/ADMIN only. |
 | `DELETE /:workspaceId/members/:userId` | — | **204** | OWNER/ADMIN only. |
+| `DELETE /:workspaceId/members/me` | — | **204** | Leave a workspace. 400 if you're the only OWNER. |
+| `POST /:workspaceId/convert-to-shared` | — | **200** | OWNER only. Opens a private workspace up; mints a fresh private one and repoints your default if needed. |
+| `POST /:workspaceId/convert-to-private` | — | **200** `{ workspace }` | OWNER only, **sole member only** — 400 naming anyone still in it. |
+| `GET /:workspaceId/delete-preview` | — | **200** | OWNER only. What a delete would destroy. |
+| `DELETE /:workspaceId` | `{ confirmName, newDefaultWorkspaceId? }` | **204** | **OWNER only.** Irreversible — destroys every project inside. |
 
 Member: `{ userId, role, createdAt, user: { id, fullName, email } }`.
 
-RBAC guardrails (all return a clear 4xx): only an **OWNER** may grant the OWNER role or change/remove an existing owner; a workspace must always keep **at least one owner** (last-owner demote/remove → 400); MEMBERs can't manage anyone (403).
+RBAC guardrails (all return a clear 4xx): only an **OWNER** may grant the OWNER role or change/remove an existing owner; a workspace must always keep **at least one owner** (last-owner demote/remove/leave → 400); MEMBERs can't manage anyone (403); only an **OWNER** may delete a workspace or convert it.
 
-### Personal workspaces can't be shared ⚠️
+### Two separate facts: `isPrivate` and `isDefault` ⚠️
 
-Every workspace object now carries **`isPersonal`**. The personal workspace is the one created at registration; projects created without an explicit `workspaceId` land there, so over time it holds everything the founder has ever started.
+These used to be one field (`isPersonal`) and are now deliberately independent:
 
-**`POST /members/invite` on a personal workspace returns 400.** Inviting one collaborator there would hand over that entire back catalogue, so it's refused rather than warned about. The UI should:
+- **`isPrivate`** — nobody can be invited here. A user may own **any number** of private workspaces, or none.
+- **`isDefault`** — where *this caller's* new projects land when `POST /projects` names no `workspaceId`. **Exactly one per user.** It's per-caller, so the same shared workspace can be the default for one member and not another.
 
-1. **Hide or disable the invite affordance** when `isPersonal` is true, rather than letting the founder discover this via an error.
-2. Offer the real path instead: **create a shared workspace** (`POST /workspaces`) → **move the relevant projects into it** (`PATCH /projects/:id` with `workspaceId`, §2) → **invite there**.
+Don't use `isPrivate` to find someone's home workspace — use `isDefault`.
 
-This is the one breaking change in this batch: an invite flow that assumed "pick a person, send" now needs a workspace step in front of it.
+**`POST /members/invite` on a private workspace returns 400.** Membership is workspace-wide, so inviting one collaborator would hand over every project in there. **Hide or disable the invite affordance when `isPrivate` is true** rather than letting the founder discover it via an error. Offer the real path instead: create a shared workspace → **move the relevant projects into it** (`POST /projects/move`, §2) → invite there.
+
+### Invitations need acceptance ⚠️
+
+**Nobody joins a workspace without accepting.** An invite creates a pending invitation and sends an email; the member list doesn't change until they act.
+
+Branch on **`hasAccount`**: `true` → an existing user got an accept link (*"Invitation sent"*); `false` → an unregistered email got a signup link (*"Signup invite sent"*).
+
+The invitee's side lives at **`/api/v1/invitations`** (top level — an invitee isn't a member yet, so they can't pass the workspace gate):
+
+| Method + path | Body | Success |
+|---|---|---|
+| `GET /invitations` | — | `{ invitations }` — pending, for your email, with `projectCount` on each |
+| `POST /invitations/accept` | `{ token }` | `{ workspace, role }` — from the email link |
+| `POST /invitations/:id/accept` | — | `{ workspace, role }` — from the in-app list |
+| `POST /invitations/:id/decline` | — | `{ invitation }` |
+
+Statuses: `PENDING | ACCEPTED | REVOKED | DECLINED | EXPIRED`. Invitations expire after **14 days** and expired ones are omitted from the list. Re-inviting the same email re-arms the invitation and issues a **new token**, invalidating the previous email's link.
+
+Signup links carry `?invitation=<token>` — pass it to `POST /auth/register` as `invitationToken` and the user joins on first login (§1).
 
 ### `sharedProjectCount` — tell the founder what they're exposing
 
-Every invite response includes `sharedProjectCount`: how many projects the invitee will be able to see. Because membership is workspace-wide, "add one collaborator" is never "share one project". Put it on the confirm step:
+Every invite response includes `sharedProjectCount`: how many projects the invitee will see once they accept. Because membership is workspace-wide, "add one collaborator" is never "share one project". Put it on the confirm step:
 
 > *"Ada will be able to see all **12** projects in Acme Team."*
 
-You can read the same number ahead of time from `GET /projects?workspaceId=…`.
+The invitee sees the same number as `projectCount` on their invitation, before deciding.
 
-Note: renaming a workspace still lives at `PATCH /settings/workspaces/:workspaceId` (§10). Inviting people who don't yet have an account works (see the invite row above): a PENDING invitation is stored and consumed automatically when that email registers. **Existing users are added immediately with no accept step** — there is no accept endpoint yet, so an invite is an instant grant.
+### Deleting a workspace
+
+`DELETE /:workspaceId` is **irreversible and destroys every project inside** — blueprints, discovery, decisions, comments, exports, documents. Call `GET /:workspaceId/delete-preview` first and build the dialog from it: `projectCount`, `otherMembers`, `requiresNewDefault` (collect a replacement default in the same dialog) and `isLastOwnedWorkspace` (disable the action entirely). `confirmName` must match the workspace name exactly — use the type-the-name pattern.
+
+Note: renaming a workspace still lives at `PATCH /settings/workspaces/:workspaceId` (§10).
 
 ---
 
