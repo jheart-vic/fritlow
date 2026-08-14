@@ -7,7 +7,7 @@ import {
 } from '../../lib/email/email.service';
 import { ApiError } from '../../utils/api-error';
 import { hashPassword, verifyPassword } from '../../utils/password';
-import { consumePendingInvitations } from '../workspaces/workspace.service';
+import { consumeInvitationToken } from '../workspaces/workspace.service';
 import {
   generateOpaqueToken,
   hashToken,
@@ -104,8 +104,9 @@ export async function register(input: RegisterInput): Promise<{ user: PublicUser
 
   const passwordHash = await hashPassword(input.password);
 
-  // $transaction: either the user AND their personal workspace are created,
-  // or neither is — no half-registered accounts.
+  // $transaction: either the user AND their private workspace are created,
+  // or neither is — no half-registered accounts, and nobody ends up without
+  // somewhere for their first project to land.
   // maxWait/timeout are bumped from Prisma's 2s/5s defaults because Neon's
   // pooled endpoint can be cold on the first hit after idling, and acquiring
   // the transaction connection then takes longer than 2s (→ P2028).
@@ -115,26 +116,37 @@ export async function register(input: RegisterInput): Promise<{ user: PublicUser
         data: { email: input.email, fullName: input.fullName, passwordHash },
       });
 
-      await tx.workspace.create({
+      const workspace = await tx.workspace.create({
         data: {
           name: `${input.fullName.split(' ')[0]}'s Workspace`,
-          // Marks this as the user's private space: projects default here, and
-          // collaborators can never be invited into it.
-          isPersonal: true,
+          // Private: collaborators can never be invited here. The user may
+          // create more workspaces later, private or shared, as they like.
+          isPrivate: true,
           members: { create: { userId: created.id, role: 'OWNER' } },
         },
       });
 
-      return created;
+      // Separate fact from isPrivate: this is where projects land when the
+      // caller doesn't name a workspace. Set explicitly at registration so
+      // createProject never has to infer it. Two steps rather than a nested
+      // create because the workspace doesn't exist until the line above runs.
+      return tx.user.update({
+        where: { id: created.id },
+        data: { defaultWorkspaceId: workspace.id },
+      });
     },
     { maxWait: 10000, timeout: 15000 },
   );
 
-  // Auto-join any workspaces this email was invited to before signing up.
-  // Fire-and-forget: registration must not fail if this has a hiccup.
-  void consumePendingInvitations(user.id, user.email).catch((err) => {
-    console.warn(`[auth] failed to consume invitations for ${user.email}:`, err);
-  });
+  // Join ONLY the workspace whose invite link they registered through — that
+  // click is the consent. Other invitations to this email stay PENDING and
+  // appear in their in-app list, so nobody lands in a workspace they never
+  // agreed to. Fire-and-forget: registration must not fail if this hiccups.
+  if (input.invitationToken) {
+    void consumeInvitationToken(user.id, input.invitationToken).catch((err) => {
+      console.warn(`[auth] failed to consume invitation for ${user.email}:`, err);
+    });
+  }
 
   const verificationToken = await issueVerificationToken(user.id);
   // Fire-and-forget: sendSafely never throws, and registration must not

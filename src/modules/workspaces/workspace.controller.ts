@@ -13,6 +13,47 @@ export async function list(req: Request, res: Response) {
   res.status(200).json({ workspaces });
 }
 
+export async function setDefault(req: Request, res: Response) {
+  const workspace = await workspaceService.setDefaultWorkspace(
+    req.user!.id,
+    req.params.workspaceId as string,
+  );
+  res.status(200).json({ workspace });
+}
+
+export async function convertToShared(req: Request, res: Response) {
+  const result = await workspaceService.convertPersonalToShared(
+    req.user!.id,
+    req.params.workspaceId as string,
+  );
+  res.status(200).json(result);
+}
+
+export async function deletePreview(req: Request, res: Response) {
+  const preview = await workspaceService.previewDeleteWorkspace(
+    req.user!.id,
+    req.params.workspaceId as string,
+  );
+  res.status(200).json(preview);
+}
+
+export async function remove(req: Request, res: Response) {
+  await workspaceService.deleteWorkspace(
+    req.user!.id,
+    req.params.workspaceId as string,
+    req.body,
+  );
+  res.status(204).send();
+}
+
+export async function convertToPrivate(req: Request, res: Response) {
+  const workspace = await workspaceService.convertSharedToPrivate(
+    req.user!.id,
+    req.params.workspaceId as string,
+  );
+  res.status(200).json({ workspace });
+}
+
 export async function listMembers(req: Request, res: Response) {
   const members = await workspaceService.listMembers(req.user!.id, req.params.workspaceId as string);
   res.status(200).json({ members });
@@ -24,13 +65,42 @@ export async function inviteMember(req: Request, res: Response) {
     req.params.workspaceId as string,
     req.body,
   );
-  // Existing user → added immediately. Unknown email → a pending invitation
-  // was recorded and a signup email sent; they join when they register.
-  if (result.pending) {
-    res.status(201).json({ pending: true, invitation: result.invitation });
-  } else {
-    res.status(201).json({ member: result.member });
-  }
+  // Always a pending invitation now — nobody joins a workspace without
+  // accepting. hasAccount tells the UI which email went out: an accept link
+  // for existing users, a signup link for everyone else.
+  res.status(201).json({
+    pending: true,
+    hasAccount: result.hasAccount,
+    invitation: result.invitation,
+    sharedProjectCount: result.sharedProjectCount,
+  });
+}
+
+export async function listMyInvitations(req: Request, res: Response) {
+  const invitations = await workspaceService.listMyInvitations(req.user!.id);
+  res.status(200).json({ invitations });
+}
+
+export async function acceptInvitation(req: Request, res: Response) {
+  // Accept by id (from the in-app list) or by token (from the emailed link).
+  const result = await workspaceService.acceptInvitation(req.user!.id, {
+    invitationId: req.params.invitationId as string | undefined,
+    token: req.body?.token as string | undefined,
+  });
+  res.status(200).json(result);
+}
+
+export async function declineInvitation(req: Request, res: Response) {
+  const invitation = await workspaceService.declineInvitation(
+    req.user!.id,
+    req.params.invitationId as string,
+  );
+  res.status(200).json({ invitation });
+}
+
+export async function leaveWorkspace(req: Request, res: Response) {
+  await workspaceService.leaveWorkspace(req.user!.id, req.params.workspaceId as string);
+  res.status(204).send();
 }
 
 export async function listInvitations(req: Request, res: Response) {

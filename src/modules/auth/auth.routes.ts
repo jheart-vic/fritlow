@@ -21,7 +21,18 @@ export const authRouter = Router();
  *   post:
  *     tags: [Auth]
  *     summary: Create an account
- *     description: Registers a user, creates their personal workspace, and emails a verification link. No session tokens are issued — the user must verify their email, then log in.
+ *     description: >-
+ *       Registers a user, creates their PRIVATE workspace (and points their default at it, so
+ *       projects created without a `workspaceId` land there), and emails a verification link.
+ *       No session tokens are issued — the user must verify their email, then log in.
+ *
+ *
+ *       Pass `invitationToken` when the user arrived through a workspace invite link
+ *       (`/register?email=…&invitation=…`). Registering through that link counts as accepting,
+ *       so they join that workspace immediately. Any OTHER invitations to their email stay
+ *       pending and appear in `GET /invitations` — signing up is not by itself consent to join
+ *       workspaces they never clicked. An invalid or expired token is ignored rather than
+ *       failing registration.
  *     requestBody:
  *       required: true
  *       content:
@@ -33,6 +44,9 @@ export const authRouter = Router();
  *               fullName: { type: string, example: "Ada Lovelace" }
  *               email: { type: string, format: email, example: "ada@example.com" }
  *               password: { type: string, format: password, minLength: 8, example: "s3cret-pass" }
+ *               invitationToken:
+ *                 type: string
+ *                 description: The `invitation` query param from a workspace invite link, if the user came from one.
  *     responses:
  *       201:
  *         description: Account created — verification email sent

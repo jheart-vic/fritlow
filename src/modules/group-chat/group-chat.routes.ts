@@ -30,6 +30,7 @@ groupChatRouter.use(requireAuth);
  *     responses:
  *       201: { description: "{ channel }" }
  *       403: { description: Not a workspace member, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+ *       409: { description: A channel with that name already exists in this workspace, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
  *   get:
  *     tags: [Group Chat]
  *     summary: List channels in the workspace (with per-member hasUnread)
@@ -61,6 +62,7 @@ groupChatRouter.get('/', controller.listChannels);
  *       200: { description: "{ channel }" }
  *       403: { description: Not allowed, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
  *       404: { description: Not found, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+ *       409: { description: A channel with that name already exists in this workspace, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
  *   delete:
  *     tags: [Group Chat]
  *     summary: Delete a channel (creator or workspace OWNER/ADMIN)

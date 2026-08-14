@@ -40,16 +40,32 @@ async function getChannelInWorkspace(workspaceId: string, channelId: string) {
   return channel;
 }
 
+// Channel names are unique per workspace at the database level. Prisma reports
+// that as P2002; without this it surfaces as an unhandled 500. Catching the
+// database error rather than pre-checking with a findFirst is deliberate — a
+// pre-check is a race (two concurrent creates both see the name free), while
+// the unique index is the only thing that sees across concurrent writers.
+function isDuplicateName(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: string }).code === 'P2002';
+}
+
+const DUPLICATE_NAME_MESSAGE = 'A channel with that name already exists in this workspace';
+
 export async function createChannel(userId: string, workspaceId: string, input: CreateChannelInput) {
   await assertMember(userId, workspaceId);
-  return prisma.groupChannel.create({
-    data: {
-      workspaceId,
-      name: input.name,
-      description: input.description ?? null,
-      createdById: userId,
-    },
-  });
+  try {
+    return await prisma.groupChannel.create({
+      data: {
+        workspaceId,
+        name: input.name,
+        description: input.description ?? null,
+        createdById: userId,
+      },
+    });
+  } catch (err) {
+    if (isDuplicateName(err)) throw ApiError.conflict(DUPLICATE_NAME_MESSAGE);
+    throw err;
+  }
 }
 
 export async function listChannels(userId: string, workspaceId: string) {
@@ -74,7 +90,13 @@ export async function updateChannel(
   const member = await assertMember(userId, workspaceId);
   const channel = await getChannelInWorkspace(workspaceId, channelId);
   assertCanManage(member.role, channel.createdById, userId);
-  return prisma.groupChannel.update({ where: { id: channel.id }, data: input });
+  try {
+    return await prisma.groupChannel.update({ where: { id: channel.id }, data: input });
+  } catch (err) {
+    // Renaming onto an existing name hits the same unique index as create.
+    if (isDuplicateName(err)) throw ApiError.conflict(DUPLICATE_NAME_MESSAGE);
+    throw err;
+  }
 }
 
 export async function deleteChannel(userId: string, workspaceId: string, channelId: string) {

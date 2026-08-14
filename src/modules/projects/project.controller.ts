@@ -38,3 +38,22 @@ export async function remove(req: Request, res: Response) {
   await projectService.deleteProject(req.user!.id, req.params.id as string);
   res.status(204).send();
 }
+
+export async function moveMany(req: Request, res: Response) {
+  const result = await projectService.moveProjects(req.user!.id, req.body);
+  res.status(200).json(result);
+}
+
+export async function moveManyPreview(req: Request, res: Response) {
+  const preview = await projectService.previewMoveProjects(req.user!.id, req.body);
+  res.status(200).json(preview);
+}
+
+export async function movePreview(req: Request, res: Response) {
+  const preview = await projectService.previewMove(
+    req.user!.id,
+    req.params.id as string,
+    req.query.workspaceId as string,
+  );
+  res.status(200).json(preview);
+}

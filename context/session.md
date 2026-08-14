@@ -5,6 +5,66 @@
 
 ---
 
+## Session 23 — 2026-08-14
+
+### Done — Workspace access model: private/shared toggle, invitation consent, move visibility
+
+Client answered four open questions from the access-model review with "yes" to all: (1) let users pick private/shared when creating a workspace, (2) require existing users to accept invitations, (3) notify people when a move takes their access away, (4) build the bulk move and keep convert. Terminology confirmed with the frontend dev: **SHARED, not PUBLIC** (these workspaces are invite-only, never discoverable — "public" would mislead in the create dialog).
+
+**Phase 1 — split `isPersonal` into two concepts** (migration `split_private_from_default_workspace`, applied to dev + test DBs).
+The one boolean was doing two jobs: "invites refused here" AND "new projects land here". The second forced the count to exactly one per user, which is what made a creation toggle unsafe. Now:
+- `Workspace.isPrivate` — invites refused. **Any number per user, or none.**
+- `User.defaultWorkspaceId` — where unrouted projects land. Exactly one, explicit, nullable (SetNull).
+- Migration uses `RENAME COLUMN`, *not* Prisma's default drop-and-add, which would have reset every flag to `false` and unlocked invites into every private workspace on the platform.
+- `getPersonalWorkspaceId` → `getDefaultWorkspaceId`: reads the pointer, no `findFirst` guessing, no "earliest workspace you own" fallback. Null pointer → 400 asking the user to choose, never a silent pick.
+- Also added `@@unique([workspaceId, name])` on `GroupChannel`, closing a real check-then-insert race (under READ COMMITTED two concurrent converts could each see no `general` channel and both insert one).
+
+**Phase 2 — the toggle.** `POST /workspaces` takes `visibility: 'PRIVATE' | 'SHARED'` (default SHARED) + `setAsDefault`. PRIVATE skips the `general` channel. New `POST /workspaces/:id/set-default`, **OWNER-only** — being a member isn't enough, since defaulting into a shared workspace would publish everything you start to that team with no way to undo it yourself. Defaulting into a shared workspace is allowed but returns a `warning` string for the UI. `GET /workspaces` now returns per-caller `isDefault`.
+
+**Phase 3 — invitation acceptance** (migration `invitation_acceptance_and_move_notifications`, applied).
+- Every invite is now a PENDING row, account or not. The immediate-membership path is **gone** — being added to a workspace without consent put a stranger's projects in your sidebar on their say-so.
+- `WorkspaceInvitation` gains `tokenHash` (SHA-256, same pattern as RefreshToken) + `expiresAt` (14 days); `InvitationStatus` gains DECLINED and EXPIRED. Expiry is evaluated **on read**, so no sweeper job can disagree with the data.
+- New invitee-side router at `/api/v1/invitations` (deliberately not nested under `/workspaces/{id}` — the invitee can't pass that router's membership gate yet): `GET /`, `POST /accept` (by token), `POST /:id/accept`, `POST /:id/decline`.
+- `DELETE /workspaces/:id/members/me` — leave a workspace. Registered **before** the `/:userId` route or Express binds "me" to the param.
+- Registration reworked: `consumePendingInvitations` → `consumeInvitationToken`. Registering **through the invite link** joins that one workspace (the click is the consent); signing up independently leaves other invites PENDING in the in-app list.
+- `removeMember` and `leaveWorkspace` both clear `defaultWorkspaceId` when it pointed at the workspace being left — otherwise the next project create fails obscurely.
+
+**Phase 4 — move visibility.** `PROJECT_MOVED` notification type. `getAccessDelta` computes the **set difference** of memberships (people in both workspaces notice nothing and are correctly not told they lost access). Copy never names the destination — the people who lost access can't see it, and naming it leaks its existence. New `GET /projects/:id/move-preview` so the confirm dialog and the server agree on the number. Dashboard now returns `workspace {id,name,isPrivate}` + `isMine` per project and accepts `?workspaceId`; the headline `nextAction` prefers the caller's **own** most-recent project, so a new collaborator isn't told to continue a teammate's interview.
+
+**Phase 5 — bulk move + two-way conversion.** `POST /projects/move` and `POST /projects/move-preview` (body, not query — the id list is a body). Validates OWNER/ADMIN on the destination **and every distinct source** (a multi-select naturally spans workspaces). All-or-nothing in one transaction, capped at 50. Notifications are batched: one per person per source naming the count, not one per project. New `POST /workspaces/:id/convert-to-private`, allowed **only when the caller is the sole member** — silently ejecting people would revoke their access to everything with no warning; pending invites are REVOKED in the same transaction.
+
+**Phase 6 — tests.** New integration tests across `workspace.test.ts` and `project-move.test.ts`. Added `waitFor` to `src/test/helpers.ts` for asserting on fire-and-forget work.
+
+**Workspace delete** (client asked for it after the six phases; closes the gap the plan had flagged as unbuildable). Migration `add_workspace_deleted_notification`.
+- `DELETE /workspaces/:id` + `GET /workspaces/:id/delete-preview`. **OWNER only — explicitly confirmed by the client; an ADMIN gets 403.**
+- Deleting cascades to every project and everything under it (blueprint, discovery, decisions, comments, exports, documents). No soft delete, no undo — hence three guards:
+  1. **`confirmName` must exactly match the workspace name**, case-sensitive. A boolean `confirm: true` wouldn't help: the realistic mistake is deleting the *wrong* workspace from a list of six, and only retyping the name proves which one is meant.
+  2. **Cannot delete the only workspace you own** — you'd have nowhere for a new project to go.
+  3. **Deleting your default requires `newDefaultWorkspaceId`** (must be another workspace you own). No auto-pick: silently rehoming someone's future projects is exactly what the explicit pointer exists to prevent.
+- Other members get a `WORKSPACE_DELETED` notification *after* the transaction commits (telling people their work vanished when the delete then rolled back would be worse than telling them late). It carries the workspace *name* only — no id, since the row is gone and a click-through would 404. Their `defaultWorkspaceId` is cleared by the FK's SetNull.
+
+### Decisions
+- **`SHARED`, not `PUBLIC`** — invite-only, never discoverable; "public" would read as "published to the internet" in the create dialog. Confirmed with the frontend dev.
+- **No cap on private workspaces.** The invariant is on the *default* (exactly one), not on how many private workspaces exist.
+- **Shared → private requires sole membership**, refused with the remaining members named. The alternative (mass-eject) is exactly the silent access revocation decision 3 exists to stop.
+- **A shared workspace MAY be your default** if explicitly set, with a warning. The old danger was this happening *silently*; an explicit pointer isn't silent.
+- **Convert-to-shared auto-repoints the default** at the fresh private workspace instead of rejecting the call (a deviation from the plan, which said reject). Convert already creates that workspace, so there is nothing to guess at. It only repoints if the converted workspace *was* the default.
+- **`nextAction` gets a contribution bias** rather than strict recency.
+- Kept `notify()` fire-and-forget and fixed the *tests* to poll — production behaviour shouldn't bend to suit a test. Negative assertions ("this person was NOT notified") now wait on a positive signal first, or they'd pass for the wrong reason.
+
+### Breaking changes for the frontend dev — SEND THESE
+1. `isPersonal` → **`isPrivate`** on every workspace response.
+2. `POST /workspaces/{id}/members/invite` **never returns `member`** — `pending` is always true; branch on the new `hasAccount` instead.
+3. Dashboard project shape gains `workspace` + `isMine` (additive).
+
+### Next
+- Send the three breaking changes above to the frontend dev **before** they build against the old contract.
+- No workspace-delete endpoint exists, so the "deleting your last owned workspace" and "deleting your default" guards have nowhere to live yet — add them with that endpoint when it's built.
+- Consider revisiting the deferred acknowledge-count override on invites alongside the new bulk move.
+- Unchanged from Session 22: Render deploy, live AI endpoint tests, billing/audit logs.
+
+---
+
 ## Session 22 — 2026-08-12
 
 ### Done — Document upload (PRD/MVP) → discovery pre-fill

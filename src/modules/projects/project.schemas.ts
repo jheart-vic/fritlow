@@ -8,8 +8,20 @@ export const createProjectSchema = z.object({
   name: z.string().trim().min(1, 'Project name is required').max(100),
   oneLineIdea: z.string().trim().min(1, 'One-line idea is required').max(300),
   category: z.string().trim().min(1).max(60).optional(),
-  // Omit to use your personal workspace.
+  // Omit to use your default workspace (User.defaultWorkspaceId).
   workspaceId: z.uuid().optional(),
+});
+
+// Move several projects into one workspace in a single call — the granular
+// alternative to converting a whole private workspace to shared. The cap keeps
+// one request from locking a large slice of the projects table; it is generous
+// next to any realistic selection in the UI.
+export const moveProjectsSchema = z.object({
+  projectIds: z
+    .array(z.uuid())
+    .min(1, 'Select at least one project to move')
+    .max(50, 'You can move at most 50 projects at a time'),
+  targetWorkspaceId: z.uuid(),
 });
 
 export const updateProjectSchema = z
@@ -37,3 +49,4 @@ export const listProjectsQuerySchema = z.object({
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
 export type ListProjectsQuery = z.infer<typeof listProjectsQuerySchema>;
+export type MoveProjectsInput = z.infer<typeof moveProjectsSchema>;

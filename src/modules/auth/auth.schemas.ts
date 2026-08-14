@@ -7,6 +7,13 @@ export const registerSchema = z.object({
   fullName: z.string().trim().min(2, 'Full name must be at least 2 characters').max(100),
   email: z.email('Invalid email address').toLowerCase(),
   password: z.string().min(8, 'Password must be at least 8 characters').max(128),
+  // Set when the user arrived via a workspace invite link (?invitation=...).
+  // Registering through that link IS the acceptance, so they join immediately.
+  // Any OTHER invitations to their email stay pending for them to accept in
+  // app — signing up is not consent to join workspaces you never clicked.
+  // Invalid or expired tokens are ignored rather than failing registration:
+  // a bad link should not cost someone their account.
+  invitationToken: z.string().trim().min(1).optional(),
 });
 
 export const loginSchema = z.object({

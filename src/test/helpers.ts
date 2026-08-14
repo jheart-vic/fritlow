@@ -75,3 +75,25 @@ export async function registerAndLogin(prefix = 'user'): Promise<TestUser> {
 export function authHeader(user: TestUser): [string, string] {
   return ['Authorization', `Bearer ${user.accessToken}`];
 }
+
+// Poll until `check` returns a truthy value, or give up.
+//
+// Needed for anything the API does fire-and-forget — notifications and emails
+// are dispatched with `void`, deliberately, so the response is not held up by
+// work the caller does not wait on. That means the row can land a moment AFTER
+// the HTTP response, and asserting immediately is a race the test loses.
+// Polling asserts the outcome without changing production behaviour to suit
+// the test.
+export async function waitFor<T>(
+  check: () => Promise<T>,
+  { timeoutMs = 5000, intervalMs = 100 } = {},
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  let last: T = await check();
+  while (!last || (Array.isArray(last) && last.length === 0)) {
+    if (Date.now() > deadline) return last;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    last = await check();
+  }
+  return last;
+}

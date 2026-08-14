@@ -26,6 +26,7 @@ import { settingsRouter } from './modules/settings/settings.routes';
 import { supportAdminRouter, supportRouter } from './modules/support/support.routes';
 import { templateRouter } from './modules/templates/templates.routes';
 import { workspaceRouter } from './modules/workspaces/workspace.routes';
+import { invitationRouter } from './modules/workspaces/invitation.routes';
 
 // app.ts builds the Express app (middleware + routes) without starting it,
 // so tests can import the app without opening a network port.
@@ -76,6 +77,9 @@ app.use('/api/v1/dashboard', dashboardRouter);
 app.use('/api/v1/settings', settingsRouter);
 app.use('/api/v1/templates', templateRouter);
 app.use('/api/v1/workspaces', workspaceRouter);
+// Invitee-side invitation actions. Top-level, not nested under a workspace:
+// the caller is not a member yet, so they cannot pass that router's gate.
+app.use('/api/v1/invitations', invitationRouter);
 app.use('/api/v1/workspaces/:workspaceId/channels', groupChatRouter);
 app.use('/api/v1/search', searchRouter);
 // Comments: create/list are section-scoped; delete is flat (per the build spec).
