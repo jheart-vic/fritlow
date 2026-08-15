@@ -142,8 +142,10 @@ export async function register(input: RegisterInput): Promise<{ user: PublicUser
   // click is the consent. Other invitations to this email stay PENDING and
   // appear in their in-app list, so nobody lands in a workspace they never
   // agreed to. Fire-and-forget: registration must not fail if this hiccups.
+  // The email is passed so the invitation can verify it was addressed to THIS
+  // account — a forwarded invite must not let a different address join.
   if (input.invitationToken) {
-    void consumeInvitationToken(user.id, input.invitationToken).catch((err) => {
+    void consumeInvitationToken(user.id, user.email, input.invitationToken).catch((err) => {
       console.warn(`[auth] failed to consume invitation for ${user.email}:`, err);
     });
   }

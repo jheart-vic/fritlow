@@ -74,10 +74,15 @@ export async function sendWorkspaceInviteEmail(
   to: { email: string; name?: string },
   details: { workspaceName: string; inviterName?: string; role: string; token?: string },
 ): Promise<void> {
-  // The invitee already has an account, but is NOT a member yet — they have to
-  // accept first. The link carries the invitation token so the click itself is
-  // the acceptance; without one (legacy invites) they land on the list and
-  // accept from there.
+  // ONE landing page for every invitation, whether or not the recipient has an
+  // account. The page reads the token via the public lookup endpoint and
+  // decides what to show — sign in, sign up, accept, or "wrong account".
+  //
+  // Branching here instead would bake in whether they had an account at SEND
+  // time, and that can change before they click: someone invited without an
+  // account may well have signed up by the time they open the email.
+  //
+  // Legacy invites carry no token; they land on the in-app list instead.
   const link = details.token
     ? `${env.APP_URL}/invitations/${encodeURIComponent(details.token)}`
     : `${env.APP_URL}/invitations`;
@@ -105,13 +110,15 @@ export async function sendWorkspaceSignupInviteEmail(
   to: { email: string },
   details: { workspaceName: string; inviterName?: string; role: string; token?: string },
 ): Promise<void> {
-  // The invitee has NO Fritlow account yet. Point them at signup carrying the
-  // invitation token: registering through this link counts as accepting, so
-  // they land straight in the workspace. Registering WITHOUT the token leaves
-  // the invitation pending for them to accept in-app — signing up is not by
-  // itself consent to join someone else's workspace.
+  // Same landing page as the has-an-account email — see the note there. The
+  // page sends them on to register with this token, and registering through it
+  // counts as accepting. (Registering WITHOUT the token leaves the invitation
+  // pending: signing up is not by itself consent to join someone's workspace.)
+  //
+  // The old `/register?email=…&invitation=…` shape still works and still
+  // auto-accepts, so invites already sitting in inboxes keep resolving.
   const link = details.token
-    ? `${env.APP_URL}/register?email=${encodeURIComponent(to.email)}&invitation=${encodeURIComponent(details.token)}`
+    ? `${env.APP_URL}/invitations/${encodeURIComponent(details.token)}`
     : `${env.APP_URL}/register?email=${encodeURIComponent(to.email)}`;
   const inviter = details.inviterName ? `${details.inviterName} has invited you` : 'You have been invited';
   const roleLabel = details.role.toLowerCase();
@@ -123,10 +130,10 @@ export async function sendWorkspaceSignupInviteEmail(
         `Join ${details.workspaceName} on Fritlow`,
         `<p style="margin:0;color:#374151;font-size:14px;line-height:1.6">
            ${inviter} to collaborate in the <strong>${details.workspaceName}</strong> workspace on
-           Fritlow as a <strong>${roleLabel}</strong>. Create your free account with this email address
-           and you'll join the workspace automatically.
+           Fritlow as a <strong>${roleLabel}</strong>. Create your free account with this email
+           address to join — you'll get access to every project in that workspace.
          </p>
-         ${button(link, 'Create your account')}`,
+         ${button(link, 'View invitation')}`,
       ),
     },
     'workspace signup invite email',

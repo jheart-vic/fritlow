@@ -460,10 +460,16 @@ workspaceRouter.get('/:workspaceId/members', workspaceController.listMembers);
  *       membership is created when the invitee accepts, never here.
  *
  *
- *       `hasAccount` says which email went out, and is the only thing that varies: `true` sends
- *       an accept link to an existing user (who will also see it in `GET /invitations` and get an
- *       in-app notification); `false` sends a signup link carrying the same token, so registering
- *       through it joins them straight away. OWNER is not grantable here — use the role endpoint.
+ *       `hasAccount` says which email copy went out: `true` = an existing user (who will also
+ *       see it in `GET /invitations` and get an in-app notification); `false` = an address with
+ *       no account yet. OWNER is not grantable here — use the role endpoint.
+ *
+ *
+ *       **Both emails link to the same place: `{APP_URL}/invitations/{token}`.** Build one
+ *       landing page there and call `GET /invitations/lookup/{token}` (public, no auth) to
+ *       render it — that endpoint documents the full sign-in / sign-up / accept / wrong-account
+ *       state machine. The link is deliberately NOT branched on whether the recipient has an
+ *       account, because that can change between sending and clicking.
  *
  *
  *       Re-inviting the same email re-arms the existing invitation: the role is updated, any

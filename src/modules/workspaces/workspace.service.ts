@@ -711,6 +711,67 @@ export async function listMyInvitations(userId: string) {
   }));
 }
 
+// Read an invitation from its token WITHOUT being logged in.
+//
+// This exists so the invite-link landing page can render before auth. Every
+// other invitation route sits behind requireAuth, which means a logged-out
+// click could only ever produce a bare login form with no workspace name, no
+// inviter and no project count — the flow reads as broken rather than merely
+// unpolished.
+//
+// Authorization is the token itself: high-entropy, stored only as a SHA-256
+// hash, and looked up by exact match. There is no listing and nothing to
+// enumerate — you either hold the link that was emailed to you or you get a
+// 404. Rate-limited at the route as cheap insurance against grinding.
+//
+// Everything returned here was already in the invitation email the caller is
+// holding, so this discloses nothing new to a legitimate recipient.
+export async function lookupInvitation(token: string) {
+  const invitation = await prisma.workspaceInvitation.findUnique({
+    where: { tokenHash: hashToken(token) },
+    include: invitationWorkspaceSelect,
+  });
+  if (!invitation) {
+    throw ApiError.notFound('Invitation not found');
+  }
+
+  // Expiry is derived on read everywhere else; report it the same way here
+  // rather than leaving the page to compare timestamps itself.
+  const status = isExpired(invitation) ? 'EXPIRED' : invitation.status;
+
+  // Whether the invited address already has an account — this is what lets the
+  // page send the visitor to sign-in vs sign-up instead of guessing. It is an
+  // account-existence signal, but gated behind holding a valid invitation
+  // token for that exact address, which the inviter already knew.
+  const account = await prisma.user.findUnique({
+    where: { email: invitation.email },
+    select: { id: true },
+  });
+
+  const projectCount = await prisma.project.count({
+    where: { workspaceId: invitation.workspaceId },
+  });
+
+  return {
+    // Deliberately no workspaceId and no project names — the visitor is not a
+    // member yet and may never accept. The name and count are what the email
+    // already told them.
+    workspace: { name: invitation.workspace.name, isPrivate: invitation.workspace.isPrivate },
+    invitedBy: invitation.invitedBy,
+    // Returned so the page can compare it against the current session and say
+    // "this invitation is for ada@… , you are signed in as bob@…".
+    email: invitation.email,
+    role: invitation.role,
+    status,
+    expiresAt: invitation.expiresAt,
+    projectCount,
+    accountExists: Boolean(account),
+    // Only PENDING invitations can be acted on; everything else needs its own
+    // message rather than a generic failure.
+    actionable: status === 'PENDING',
+  };
+}
+
 // Load an invitation the CALLER is entitled to act on, by id or by raw token.
 // The email must match: an invitation id is a uuid, but guessing one must not
 // let a third party join a workspace they were never invited to.
@@ -805,11 +866,24 @@ export async function declineInvitation(userId: string, invitationId: string) {
 //
 // Best-effort: a failure here must never fail registration, so callers invoke
 // it fire-and-forget.
-export async function consumeInvitationToken(userId: string, token: string): Promise<void> {
+export async function consumeInvitationToken(
+  userId: string,
+  email: string,
+  token: string,
+): Promise<void> {
   const invitation = await prisma.workspaceInvitation.findUnique({
     where: { tokenHash: hashToken(token) },
   });
   if (!invitation || invitation.status !== 'PENDING' || isExpired(invitation)) return;
+
+  // The invitation was addressed to a specific person. Holding the token is
+  // not enough — the account being created has to be the one it was sent to.
+  //
+  // Without this, forwarding the invite email hands over the workspace: the
+  // recipient registers with their OWN address, the token still matches, and
+  // they land in every project inside. The inviter picked an email; a forward
+  // must not silently transfer that access to someone else.
+  if (invitation.email !== email.toLowerCase()) return;
 
   await prisma.$transaction(async (tx) => {
     const claimed = await tx.workspaceInvitation.updateMany({
