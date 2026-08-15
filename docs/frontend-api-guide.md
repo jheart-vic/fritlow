@@ -27,7 +27,7 @@ CORS note: the dev frontend origin must be in the server's `CORS_ORIGIN` env all
 
 | Method + path | Body | Success | Notes |
 |---|---|---|---|
-| `POST /register` | `{ fullName, email, password (min 8), invitationToken? }` | **201** `{ user, message }` — **no tokens, no cookie** | 409 if email taken. Creates the user + their private workspace (set as their default) and emails a verification link. The user must verify, then log in. **`invitationToken`**: pass the `invitation` query param through from a workspace invite link (`/register?email=…&invitation=…`) — registering via that link counts as accepting, so they join on first login. Omit it and the invitation stays pending for them to accept in-app. An invalid/expired token is ignored, never fatal |
+| `POST /register` | `{ fullName, email, password (min 8), invitationToken? }` | **201** `{ user, message }` — **no tokens, no cookie** | 409 if email taken. Creates the user + their private workspace (set as their default) and emails a verification link. The user must verify, then log in. **`invitationToken`**: pass it when the user came from the invite landing page (§12) — registering with it counts as accepting, so they join on first login. **It only applies if `email` matches the address the invitation was sent to**, so keep that field read-only while a token is attached, or the user silently won't join. Omit it and the invitation stays pending for them to accept in-app. An invalid, expired, or wrongly-addressed token is ignored, never fatal |
 | `POST /login` | `{ email, password }` | **200** `{ user, accessToken }` + cookie | 401 on bad credentials (same error for wrong email vs wrong password). **403 if the email is not verified yet** — show a "verify first" screen with a resend button |
 | `POST /refresh` | `{}` (cookie) or `{ refreshToken }` fallback | **200** `{ accessToken }` + new cookie | Old refresh token is revoked — a replayed one 401s |
 | `POST /logout` | `{}` (cookie) | **204**, cookie cleared | |
@@ -462,16 +462,33 @@ Branch on **`hasAccount`**: `true` → an existing user got an accept link (*"In
 
 The invitee's side lives at **`/api/v1/invitations`** (top level — an invitee isn't a member yet, so they can't pass the workspace gate):
 
-| Method + path | Body | Success |
-|---|---|---|
-| `GET /invitations` | — | `{ invitations }` — pending, for your email, with `projectCount` on each |
-| `POST /invitations/accept` | `{ token }` | `{ workspace, role }` — from the email link |
-| `POST /invitations/:id/accept` | — | `{ workspace, role }` — from the in-app list |
-| `POST /invitations/:id/decline` | — | `{ invitation }` |
+| Method + path | Auth | Body | Success |
+|---|---|---|---|
+| `GET /invitations/lookup/:token` | **none** | — | `{ invitation }` — for the invite-link landing page |
+| `GET /invitations` | Bearer | — | `{ invitations }` — pending, for your email, with `projectCount` on each |
+| `POST /invitations/accept` | Bearer | `{ token }` | `{ workspace, role }` — from the email link |
+| `POST /invitations/:id/accept` | Bearer | — | `{ workspace, role }` — from the in-app list |
+| `POST /invitations/:id/decline` | Bearer | — | `{ invitation }` |
 
-Statuses: `PENDING | ACCEPTED | REVOKED | DECLINED | EXPIRED`. Invitations expire after **14 days** and expired ones are omitted from the list. Re-inviting the same email re-arms the invitation and issues a **new token**, invalidating the previous email's link.
+Statuses: `PENDING | ACCEPTED | REVOKED | DECLINED | EXPIRED`. Invitations expire after **14 days** and expired ones are omitted from `GET /invitations`. Re-inviting the same email re-arms the invitation and issues a **new token**, invalidating the previous email's link.
 
-Signup links carry `?invitation=<token>` — pass it to `POST /auth/register` as `invitationToken` and the user joins on first login (§1).
+### The invite link — one landing page for everyone
+
+**Every invite email links to `{APP_URL}/invitations/<token>`** (path param), whether or not the recipient has an account. Build one page there and call the public `GET /invitations/lookup/:token` to render it *before* the visitor signs in — otherwise a logged-out click can only show a bare login form with no workspace name or inviter.
+
+It returns `workspace {name, isPrivate}`, `invitedBy`, `email`, `role`, `status`, `expiresAt`, `projectCount`, `accountExists`, `actionable`. No `workspaceId` and no project names — the visitor isn't a member yet.
+
+| Visitor state | What to show |
+|---|---|
+| Signed out, `accountExists: true` | Invite + "Sign in to accept" → login → return to token |
+| Signed out, `accountExists: false` | Invite + "Create your account" → `POST /auth/register` with `invitationToken` |
+| Signed in as `email` | Invite + Accept / Decline → `POST /invitations/accept` `{ token }` |
+| Signed in as someone else | *"This invitation is for `{email}` — you're signed in as X."* |
+| `actionable: false` | A message per `status` (expired / revoked / declined / already accepted) |
+
+Accept returns **404** on an email mismatch and won't explain why — compare `invitation.email` to the session yourself for that fourth row. The lookup endpoint is rate-limited, so handle **429**.
+
+Legacy `/register?email=…&invitation=…` links still resolve, so invites already in inboxes keep working.
 
 ### `sharedProjectCount` — tell the founder what they're exposing
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { app } from '../../app';
 import { prisma } from '../../lib/prisma';
 import { registerAndLogin, waitFor, type TestUser } from '../../test/helpers';
+import { generateOpaqueToken, hashToken } from '../../utils/tokens';
 
 // Access control is the most security-sensitive surface in the product: these
 // tests pin the invariants that decide who can see whose work. Every one of
@@ -261,6 +262,185 @@ describe('Invitations', () => {
         where: { workspaceId: ws.body.workspace.id, userId: stranger.id },
       }),
     ).toBe(0);
+  });
+});
+
+describe('Invite link landing page', () => {
+  // The raw token never appears in an API response — it only exists in the
+  // emailed link — so tests read it the way the landing page's visitor does:
+  // by holding the value that was generated at invite time. We recover it by
+  // intercepting nothing and instead asserting on what lookup returns for a
+  // token we mint through the real flow, via the DB's stored hash.
+  async function inviteAndGetToken(owner: TestUser, workspaceId: string, email: string) {
+    await invite(owner, workspaceId, email);
+    // The service hashes the token before storing, so the raw value is gone.
+    // For test purposes we re-issue a known one directly, mirroring what
+    // inviteMember does — this is the only way to exercise the token path.
+    const token = generateOpaqueToken();
+    await prisma.workspaceInvitation.update({
+      where: { workspaceId_email: { workspaceId, email } },
+      data: { tokenHash: hashToken(token) },
+    });
+    return token;
+  }
+
+  it('renders an invitation to a logged-out visitor', async () => {
+    const owner = await registerAndLogin('look-out');
+    const ws = await createWorkspace(owner, { name: 'Landing Co' });
+    const workspaceId = ws.body.workspace.id;
+    await request(app)
+      .post('/api/v1/projects')
+      .set(auth(owner))
+      .send({ name: 'A project', oneLineIdea: 'idea', workspaceId });
+
+    const token = await inviteAndGetToken(owner, workspaceId, 'stranger@test.fritlow');
+
+    // No Authorization header at all — this is the whole point of the endpoint.
+    const res = await request(app).get(`/api/v1/invitations/lookup/${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.invitation.workspace.name).toBe('Landing Co');
+    expect(res.body.invitation.invitedBy.fullName).toBe(owner.fullName);
+    expect(res.body.invitation.email).toBe('stranger@test.fritlow');
+    expect(res.body.invitation.projectCount).toBe(1);
+    expect(res.body.invitation.actionable).toBe(true);
+
+    // Never leak the workspace id or its contents to a non-member.
+    expect(res.body.invitation.workspace.id).toBeUndefined();
+  });
+
+  it('reports whether the invited address already has an account', async () => {
+    const owner = await registerAndLogin('look-acct');
+    const existing = await registerAndLogin('look-acct-existing');
+    const ws = await createWorkspace(owner, { name: 'Routing Co' });
+
+    const knownToken = await inviteAndGetToken(owner, ws.body.workspace.id, existing.email);
+    const unknownToken = await inviteAndGetToken(
+      owner,
+      ws.body.workspace.id,
+      'nobody@test.fritlow',
+    );
+
+    // Drives sign-in vs sign-up on the landing page.
+    const known = await request(app).get(`/api/v1/invitations/lookup/${knownToken}`);
+    expect(known.body.invitation.accountExists).toBe(true);
+
+    const unknown = await request(app).get(`/api/v1/invitations/lookup/${unknownToken}`);
+    expect(unknown.body.invitation.accountExists).toBe(false);
+  });
+
+  it('reports a revoked invitation as not actionable rather than 404', async () => {
+    const owner = await registerAndLogin('look-revoked');
+    const ws = await createWorkspace(owner, { name: 'Revoked Co' });
+    const workspaceId = ws.body.workspace.id;
+    const token = await inviteAndGetToken(owner, workspaceId, 'gone@test.fritlow');
+
+    const list = await request(app)
+      .get(`/api/v1/workspaces/${workspaceId}/invitations`)
+      .set(auth(owner));
+    await request(app)
+      .delete(`/api/v1/workspaces/${workspaceId}/invitations/${list.body.invitations[0].id}`)
+      .set(auth(owner));
+
+    // The page needs a specific message, not a generic failure.
+    const res = await request(app).get(`/api/v1/invitations/lookup/${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.invitation.status).toBe('REVOKED');
+    expect(res.body.invitation.actionable).toBe(false);
+  });
+
+  it('404s on an unknown token', async () => {
+    const res = await request(app).get('/api/v1/invitations/lookup/not-a-real-token');
+    expect(res.status).toBe(404);
+  });
+
+  it('lets the invitee accept straight from the link token', async () => {
+    const owner = await registerAndLogin('look-accept');
+    const invitee = await registerAndLogin('look-accept-target');
+    const ws = await createWorkspace(owner, { name: 'Clickthrough Co' });
+    const workspaceId = ws.body.workspace.id;
+    const token = await inviteAndGetToken(owner, workspaceId, invitee.email);
+
+    const res = await request(app)
+      .post('/api/v1/invitations/accept')
+      .set(auth(invitee))
+      .send({ token });
+
+    expect(res.status).toBe(200);
+    expect(res.body.workspace.name).toBe('Clickthrough Co');
+    expect(
+      await prisma.workspaceMember.count({ where: { workspaceId, userId: invitee.id } }),
+    ).toBe(1);
+  });
+
+  it('refuses a token accepted while signed in as somebody else', async () => {
+    const owner = await registerAndLogin('look-wrong');
+    const invitee = await registerAndLogin('look-wrong-target');
+    const other = await registerAndLogin('look-wrong-other');
+    const ws = await createWorkspace(owner, { name: 'Wrong Account Co' });
+    const workspaceId = ws.body.workspace.id;
+    const token = await inviteAndGetToken(owner, workspaceId, invitee.email);
+
+    // The landing page catches this case first by comparing lookup.email to
+    // the session; the API refuses it regardless.
+    const res = await request(app)
+      .post('/api/v1/invitations/accept')
+      .set(auth(other))
+      .send({ token });
+
+    expect(res.status).toBe(404);
+    expect(
+      await prisma.workspaceMember.count({ where: { workspaceId, userId: other.id } }),
+    ).toBe(0);
+  });
+
+  it('does NOT let a forwarded invite be redeemed by a different email at signup', async () => {
+    const owner = await registerAndLogin('fwd-owner');
+    const ws = await createWorkspace(owner, { name: 'Forwarded Co' });
+    const workspaceId = ws.body.workspace.id;
+    const token = await inviteAndGetToken(owner, workspaceId, 'intended@test.fritlow');
+
+    // Someone forwards the email; the recipient registers with their own address.
+    const res = await request(app).post('/api/v1/auth/register').send({
+      fullName: 'Opportunist Person',
+      email: 'opportunist@test.fritlow',
+      password: 'test-password-123',
+      invitationToken: token,
+    });
+    expect(res.status).toBe(201);
+
+    // Registration succeeds — a bad token must never cost someone their
+    // account — but it buys no access to the workspace.
+    const joined = await prisma.workspaceMember.findFirst({
+      where: { workspaceId, user: { email: 'opportunist@test.fritlow' } },
+    });
+    expect(joined).toBeNull();
+
+    // And the invitation is still waiting for the person it was addressed to.
+    const invitation = await prisma.workspaceInvitation.findFirst({ where: { workspaceId } });
+    expect(invitation?.status).toBe('PENDING');
+  });
+
+  it('joins the workspace when the invited address registers with the token', async () => {
+    const owner = await registerAndLogin('fwd-ok-owner');
+    const ws = await createWorkspace(owner, { name: 'Intended Co' });
+    const workspaceId = ws.body.workspace.id;
+    const token = await inviteAndGetToken(owner, workspaceId, 'intended2@test.fritlow');
+
+    const res = await request(app).post('/api/v1/auth/register').send({
+      fullName: 'Intended Person',
+      email: 'intended2@test.fritlow',
+      password: 'test-password-123',
+      invitationToken: token,
+    });
+    expect(res.status).toBe(201);
+
+    const joined = await waitFor(() =>
+      prisma.workspaceMember.findMany({
+        where: { workspaceId, user: { email: 'intended2@test.fritlow' } },
+      }),
+    );
+    expect(joined).toHaveLength(1);
   });
 });
 

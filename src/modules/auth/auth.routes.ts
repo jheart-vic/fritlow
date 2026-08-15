@@ -27,12 +27,24 @@ export const authRouter = Router();
  *       No session tokens are issued — the user must verify their email, then log in.
  *
  *
- *       Pass `invitationToken` when the user arrived through a workspace invite link
- *       (`/register?email=…&invitation=…`). Registering through that link counts as accepting,
- *       so they join that workspace immediately. Any OTHER invitations to their email stay
- *       pending and appear in `GET /invitations` — signing up is not by itself consent to join
- *       workspaces they never clicked. An invalid or expired token is ignored rather than
- *       failing registration.
+ *       Pass `invitationToken` when the user arrived through a workspace invite link. Invite
+ *       emails now point at `{APP_URL}/invitations/{token}` — that landing page reads the
+ *       invitation with `GET /invitations/lookup/{token}` and, for a visitor with no account,
+ *       sends them here with the same token. (The older
+ *       `/register?email=…&invitation=…` links still work, so invites already sitting in
+ *       inboxes keep resolving.)
+ *
+ *
+ *       Registering with the token counts as accepting, so they join that workspace
+ *       immediately. **The token only applies when `email` matches the address the invitation
+ *       was sent to** — a forwarded invite cannot be redeemed by a different address, or
+ *       passing the link on would silently hand over every project in the workspace.
+ *
+ *
+ *       Any OTHER invitations to their email stay pending and appear in `GET /invitations` —
+ *       signing up is not by itself consent to join workspaces they never clicked. An invalid,
+ *       expired, or wrongly-addressed token is ignored rather than failing registration: a bad
+ *       link should not cost someone their account.
  *     requestBody:
  *       required: true
  *       content:

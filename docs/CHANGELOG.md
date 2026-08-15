@@ -5,6 +5,89 @@ The source of truth is always the live spec at `/docs` (raw JSON at `/docs.json`
 
 ---
 
+## 2026-08-15 — Invite links: one landing page, and a public lookup
+
+Answers the "what URL does the invite email actually point to?" question, and fixes a hole found while checking. **One breaking change** (link shape), one new public endpoint, one security fix.
+
+### The short answer
+
+**Every invite email now links to the same place:**
+
+```
+{APP_URL}/invitations/<token>
+```
+
+Path param, not a query param. Same URL whether or not the recipient already has a Fritlow account. Build **one** landing page there.
+
+### ⚠️ Breaking — the signup-invite link changed
+
+Previously the backend sent two different URLs depending on whether the invited email had an account *at the moment the invite was sent*:
+
+```diff
+  # has an account
+  {APP_URL}/invitations/<token>
+- # no account
+- {APP_URL}/register?email=<email>&invitation=<token>
++ # no account — now the same as above
++ {APP_URL}/invitations/<token>
+```
+
+**Why the old split was wrong:** the branch was decided at send time, but the fact can change before the click. Someone invited without an account may well have signed up by the time they open the email, and would land on a registration page while already authenticated. The reverse (invited with an account, clicks while logged out) had no context to show either.
+
+`POST /auth/register` still accepts `invitationToken`, and **the old `/register?email=…&invitation=…` links still resolve** — invites already sitting in inboxes keep working. You just won't receive that shape for new invites.
+
+### New — `GET /invitations/lookup/{token}` (no auth)
+
+The only unauthenticated invitation endpoint. Call it from the landing page to render the invite *before* the visitor signs in.
+
+```jsonc
+{
+  "invitation": {
+    "workspace":   { "name": "Acme Product Team", "isPrivate": false },
+    "invitedBy":   { "id": "…", "fullName": "Ada Lovelace", "avatarUrl": null },
+    "email":       "invitee@example.com",
+    "role":        "MEMBER",
+    "status":      "PENDING",
+    "expiresAt":   "2026-08-29T…",
+    "projectCount": 12,
+    "accountExists": true,
+    "actionable":  true
+  }
+}
+```
+
+Note there is **no `workspaceId` and no project names** — the visitor isn't a member and may never accept. `status` has `EXPIRED` derived on read, so you'll never get a stale `PENDING`.
+
+### The landing page state machine
+
+Everything you need is in that one response:
+
+| Visitor state | What to show |
+|---|---|
+| Signed out, `accountExists: true` | The invite + **"Sign in to accept"** → login → return to this token |
+| Signed out, `accountExists: false` | The invite + **"Create your account"** → `POST /auth/register` with `invitationToken` |
+| Signed in as `email` | The invite + **Accept / Decline** → `POST /invitations/accept` with `{ token }` |
+| Signed in as a different address | *"This invitation is for `{email}` — you're signed in as X. Switch accounts."* |
+| `actionable: false` | A message per `status` — expired / revoked / declined / already accepted |
+
+That fourth row is worth building properly: `POST /invitations/accept` returns **404** on an email mismatch (deliberately — it won't confirm whether a token exists for someone else). Compare `invitation.email` against the session yourself and show the friendly message; don't rely on the API error to explain it.
+
+The fifth row replaces what used to be four different situations collapsing into one unhelpful failure.
+
+### ⚠️ Security fix — a forwarded invite can no longer be redeemed by someone else
+
+`POST /auth/register` with an `invitationToken` previously joined the workspace based on the **token alone**. Forwarding the invite email let the recipient register with *their own* address and land in every project inside.
+
+Now the token only applies when the registering `email` matches the address the invitation was sent to. Mismatches are ignored silently — registration still succeeds (a bad link must never cost someone their account), they just don't join the workspace, and the invitation stays PENDING for the person it was addressed to.
+
+**Frontend impact:** if you prefill the email field from the invite, don't let it be edited while a token is attached — or the user will silently not join and won't know why. Better: keep it read-only and offer "use a different email" as an explicit action that drops the token.
+
+### Rate limiting
+
+`GET /invitations/lookup/{token}` is rate-limited like the auth endpoints — a **429** with `Retry-After` is possible. Handle it the same way you handle login throttling.
+
+---
+
 ## 2026-08-14 — Workspace access model
 
 A client-driven rework of who can see what. **Three breaking changes**, several new endpoints, and one behaviour change you'll notice immediately in testing.

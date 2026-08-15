@@ -76,6 +76,12 @@ export async function inviteMember(req: Request, res: Response) {
   });
 }
 
+// Public — no req.user here, unlike every other handler in this file.
+export async function lookupInvitation(req: Request, res: Response) {
+  const invitation = await workspaceService.lookupInvitation(req.params.token as string);
+  res.status(200).json({ invitation });
+}
+
 export async function listMyInvitations(req: Request, res: Response) {
   const invitations = await workspaceService.listMyInvitations(req.user!.id);
   res.status(200).json({ invitations });
