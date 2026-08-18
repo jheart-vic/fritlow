@@ -3,7 +3,7 @@ import { prisma } from '../prisma';
 import { ApiError } from '../../utils/api-error';
 import { anthropicProvider } from './anthropic.provider';
 import { openaiProvider } from './openai.provider';
-import type { AiAttachment, AiProvider } from './types';
+import type { AiAttachment, AiProvider, AiReasoningEffort } from './types';
 
 // The single entry point for AI in Fritlow. Feature services call
 // generateText(); this module picks the provider and logs every call
@@ -28,7 +28,13 @@ export interface GenerateTextParams {
   feature: string; // e.g. "discovery.follow_up" — for the audit log
   system?: string;
   prompt: string;
+  // Budget for reasoning AND the visible answer together — see
+  // AiCompletionRequest.maxTokens. Too small and the model spends it all
+  // thinking and returns nothing.
   maxTokens?: number;
+  // How hard to think. Lower is faster and cheaper; structured extraction
+  // rarely needs more than 'low'.
+  reasoningEffort?: AiReasoningEffort;
   userId?: string;
   projectId?: string;
   // Images / PDFs to send alongside the prompt (see AiAttachment). Only the
@@ -62,7 +68,13 @@ export async function generateTextStream(
 
 type Executor = (
   provider: ReturnType<typeof getProvider>,
-  request: { system?: string; prompt: string; maxTokens?: number; attachments?: AiAttachment[] },
+  request: {
+    system?: string;
+    prompt: string;
+    maxTokens?: number;
+    reasoningEffort?: AiReasoningEffort;
+    attachments?: AiAttachment[];
+  },
 ) => ReturnType<ReturnType<typeof getProvider>['complete']>;
 
 async function run(params: GenerateTextParams, execute: Executor): Promise<string> {
@@ -80,6 +92,7 @@ async function run(params: GenerateTextParams, execute: Executor): Promise<strin
       system: params.system,
       prompt: params.prompt,
       maxTokens: params.maxTokens,
+      reasoningEffort: params.reasoningEffort,
       attachments: params.attachments,
     });
 

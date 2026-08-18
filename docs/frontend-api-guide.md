@@ -636,9 +636,14 @@ A per-project AI assistant ("founder copilot") that answers using the project's 
 | `POST /chat` | `{ message, conversationId? }` | **SSE** | `delta` events (text chunks) → one `done` `{ conversationId, userMessage, assistantMessage }`, or `error`. Omit `conversationId` to start a new thread. Consume with **fetch + ReadableStream** (not `EventSource` — it can't send the Bearer header). |
 | `GET /chat/conversations` | — | **200** `{ conversations }` | Newest first; each has an auto-generated `title`. |
 | `GET /chat/conversations/:id` | — | **200** `{ conversation }` (with `messages[]`) | 404 if not yours. |
-| `DELETE /chat/conversations/:id` | — | **204** | Deletes the thread + messages. |
+| `PATCH /chat/conversations/:id` | `{ title }` | **200** `{ conversation }` | Rename. `title` max 120 chars; **`null` clears it** back to untitled. Blank → 400. |
+| `DELETE /chat/conversations/:id` | — | **204** | Deletes the thread + messages. Irreversible — confirm first. |
 
 `ChatMessage`: `{ id, role: "USER"|"ASSISTANT", content, conversationId, createdAt }`. Pass the same `conversationId` back on each turn to keep context (the server feeds recent history to the model). Requires the AI provider configured server-side (else the stream emits an `error` event).
+
+Conversations are **per-user within a project**, so someone else's conversation id returns **404, not 403** — it isn't theirs to know exists. Render that as "gone", not "permission denied".
+
+**On speed:** replies take on the order of 10–20 seconds end to end, so keep the streaming UI — what matters to the user is time to first token, not total time. Don't block the rest of the page on the stream, and don't set an aggressive client timeout.
 
 ---
 

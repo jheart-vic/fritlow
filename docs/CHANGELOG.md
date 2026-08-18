@@ -5,6 +5,54 @@ The source of truth is always the live spec at `/docs` (raw JSON at `/docs.json`
 
 ---
 
+## 2026-08-18 — Chat rename, and the AI latency / empty-response fix
+
+Nothing breaking. One new endpoint, one clarification, and a real fix behind the scenes.
+
+### New — rename a conversation
+
+```
+PATCH /api/v1/projects/{projectId}/chat/conversations/{id}
+{ "title": "Pricing model options" }   // or  { "title": null }  to clear it
+```
+
+Returns `{ conversation }` (the row, without messages). `title` is capped at 120 chars; blank is a 400. **Send `null` to clear** — that's the way out of a bad rename, back to whatever you show for an untitled chat.
+
+### Delete already existed
+
+`DELETE /api/v1/projects/{projectId}/chat/conversations/{id}` → **204**. It's been there since the chat module shipped; it just wasn't called out clearly, so it was easy to miss. Messages cascade with it. Irreversible — no archive, no restore — so confirm before calling.
+
+Both are **your own conversations only**. Chats are per-user within a project, not shared with the workspace, so someone else's conversation id reads as a **404** rather than a 403 — it isn't theirs to know exists. Don't render that as "permission denied"; treat it as gone.
+
+### Fixed — "AI returned an unparseable impact analysis"
+
+`POST /projects/{id}/blueprint/sections/{key}/impact-analysis` had **never once succeeded** — 8 of 8 recorded calls failed. The error message blamed JSON parsing, which was a red herring.
+
+The real cause: GPT-5 is a reasoning model, and its internal reasoning is billed against the *same* token budget as the visible answer. That call ships the entire rest of the blueprint (~14k characters) into an analytical task, and the budget was 2048 — so the model spent every token thinking and returned **nothing at all**. The parser then choked on an empty string and reported it as malformed JSON.
+
+Fixed by giving it room to think (2048 → 8192) and dropping its reasoning effort, which measured *identical* detection quality at ~30% lower latency. The endpoint works now.
+
+Two things you may notice:
+
+- **An empty result is a valid answer.** `{ "affectedSections": [] }` means the AI found nothing inconsistent — that's a real outcome, not a failure. It used to be possible for a legitimate "nothing is affected" to surface as a 502; it won't now.
+- **Errors are honest.** If a model genuinely runs out of room you'll get a 502 that says so, instead of one blaming the parser.
+
+### Faster AI responses
+
+The same root cause was slowing things down generally, since a model that spends its whole budget reasoning is also a model you wait on. Tuned per feature:
+
+| Feature | Change |
+|---|---|
+| Impact analysis | ~30s → **~12s** |
+| Project chat | Lower reasoning effort; also fixes ~1 in 10 replies coming back empty |
+| Discovery confidence | Raised off a cap it was hitting 81% of — a latent version of the same bug |
+
+Chat is streamed over SSE, so what improves most is **time to first token**. If you're showing a spinner until the first chunk arrives, that wait should now be noticeably shorter.
+
+Please still design for a slow response — these are 10–20 second calls, not 200ms ones. Keep the streaming UI, keep the skeleton states, and don't block the rest of the page on them.
+
+---
+
 ## 2026-08-15 — Invite links: one landing page, and a public lookup
 
 Answers the "what URL does the invite email actually point to?" question, and fixes a hole found while checking. **One breaking change** (link shape), one new public endpoint, one security fix.
