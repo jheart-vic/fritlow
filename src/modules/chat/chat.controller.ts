@@ -57,6 +57,16 @@ export async function getConversation(req: Request, res: Response) {
   res.status(200).json({ conversation });
 }
 
+export async function renameConversation(req: Request, res: Response) {
+  const conversation = await chatService.renameConversation(
+    req.user!.id,
+    projectId(req),
+    req.params.id as string,
+    req.body,
+  );
+  res.status(200).json({ conversation });
+}
+
 export async function deleteConversation(req: Request, res: Response) {
   await chatService.deleteConversation(req.user!.id, projectId(req), req.params.id as string);
   res.status(204).send();

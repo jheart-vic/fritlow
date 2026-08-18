@@ -2,7 +2,7 @@ import * as aiService from '../../lib/ai/ai.service';
 import { prisma } from '../../lib/prisma';
 import { ApiError } from '../../utils/api-error';
 import { getProject } from '../projects/project.service';
-import type { SendMessageInput } from './chat.schemas';
+import type { RenameConversationInput, SendMessageInput } from './chat.schemas';
 
 // The project AI assistant ("founder copilot"). Personal, per-project chat that
 // answers using the project's own context (discovery + blueprint + health) plus
@@ -105,7 +105,14 @@ export async function streamChat(
       feature: 'chat.message',
       userId,
       projectId,
-      maxTokens: 2048,
+      // Reasoning shares this budget with the reply, so 2048 left some answers
+      // with nothing to say — roughly 1 in 10 came back empty. The reply
+      // itself is short; the headroom is for the thinking.
+      maxTokens: 6144,
+      // A founder is watching a cursor blink. Conversational replies grounded
+      // in supplied context don't need deep deliberation, and every second of
+      // it is a second before the first streamed token appears.
+      reasoningEffort: 'low',
       system:
         'You are the Fritlow AI assistant, a product strategist helping a founder with THIS project. ' +
         'Answer their latest question using the project context and the conversation so far. Be concrete, ' +
@@ -146,6 +153,25 @@ export async function getConversation(userId: string, projectId: string, convers
     select: { id: true, role: true, content: true, createdAt: true },
   });
   return { ...conversation, messages };
+}
+
+// Rename a conversation. Goes through getOwnedConversation like every other
+// conversation action, so you can only rename your own chats — conversations
+// are per-user within a project, not shared with the workspace.
+export async function renameConversation(
+  userId: string,
+  projectId: string,
+  conversationId: string,
+  input: RenameConversationInput,
+) {
+  await getProject(userId, projectId);
+  const conversation = await getOwnedConversation(userId, projectId, conversationId);
+
+  return prisma.chatConversation.update({
+    where: { id: conversation.id },
+    data: { title: input.title },
+    select: { id: true, title: true, createdAt: true, updatedAt: true, lastMessageAt: true },
+  });
 }
 
 export async function deleteConversation(userId: string, projectId: string, conversationId: string) {

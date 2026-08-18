@@ -83,6 +83,10 @@ function buildParams(request: AiCompletionRequest) {
     model: env.AI_MODEL,
     max_tokens: request.maxTokens ?? 1024,
     // Adaptive thinking: the model decides how much reasoning a task needs.
+    // request.reasoningEffort is deliberately NOT mapped here — adaptive
+    // already does this job, and the budget is not consumed by thinking the
+    // way it is on OpenAI's reasoning models, so the caller's hint is
+    // redundant rather than ignored by oversight.
     thinking: { type: 'adaptive' as const },
     ...(request.system ? { system: request.system } : {}),
     messages: [

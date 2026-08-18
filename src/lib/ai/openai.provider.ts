@@ -70,10 +70,16 @@ function buildParams(request: AiCompletionRequest) {
 
   return {
     model: env.OPENAI_MODEL,
-    // GPT-5 is a reasoning model; reasoning tokens are billed as output and
-    // share this budget, so the default is higher than Anthropic's 1024.
-    max_output_tokens: request.maxTokens ?? 2048,
-    reasoning: { effort: env.OPENAI_REASONING_EFFORT },
+    // GPT-5 is a reasoning model: its INTERNAL reasoning is billed as output
+    // and shares this budget with the visible answer. Size this to
+    // reasoning + answer, never to the answer alone — if reasoning exhausts
+    // the budget the API returns status "incomplete" with NO text at all
+    // (see assertComplete below, which turns that into a real error).
+    max_output_tokens: request.maxTokens ?? 4096,
+    // Per-call effort beats the global default: structured extraction wants
+    // 'low' (faster, cheaper, and far less likely to spend the whole budget
+    // thinking), open-ended analysis can afford more.
+    reasoning: { effort: request.reasoningEffort ?? env.OPENAI_REASONING_EFFORT },
     ...(request.system ? { instructions: request.system } : {}),
     // Keep the plain-string form when there are no attachments (the common case).
     input: hasAttachments
@@ -82,7 +88,36 @@ function buildParams(request: AiCompletionRequest) {
   };
 }
 
+// A reasoning model that runs out of budget mid-thought returns HTTP 200 with
+// status "incomplete" and an EMPTY output_text — it never got to the answer.
+//
+// Left undetected this is genuinely misleading: the call looks successful, the
+// audit log records SUCCESS, and the failure surfaces much later as whatever
+// the caller does with an empty string (for impact analysis, "the AI returned
+// unparseable JSON" — pointing at a parser that was never the problem).
+//
+// Fail here instead, naming the actual cause and the fix.
+function assertComplete(response: Response): void {
+  const text = (response.output_text ?? '').trim();
+  if (text.length > 0) return;
+
+  const reason = response.incomplete_details?.reason;
+  if (response.status === 'incomplete' && reason === 'max_output_tokens') {
+    throw new Error(
+      `The model used its entire ${response.usage?.output_tokens ?? '?'}-token budget on ` +
+        'reasoning and returned no answer. Raise maxTokens for this call, or lower its ' +
+        'reasoningEffort.',
+    );
+  }
+  if (response.status === 'incomplete') {
+    throw new Error(`The model returned no output (incomplete: ${reason ?? 'unknown reason'}).`);
+  }
+  // Empty without an "incomplete" flag — a refusal or a genuinely empty answer.
+  throw new Error('The model returned an empty response.');
+}
+
 function toResult(response: Response): AiCompletionResult {
+  assertComplete(response);
   return {
     // The SDK aggregates all output_text blocks into this convenience getter.
     text: (response.output_text ?? '').trim(),

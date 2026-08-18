@@ -359,7 +359,16 @@ export async function analyzeSectionImpact(userId: string, projectId: string, se
     feature: 'blueprint.impact_analysis',
     userId,
     projectId,
-    maxTokens: 2048,
+    // This prompt carries the WHOLE rest of the blueprint, and on a reasoning
+    // model the thinking is billed against the same budget as the answer. At
+    // 2048 the model spent every token reasoning and returned nothing at all —
+    // which then surfaced as "unparseable JSON" from the parser below. The
+    // visible answer is a short JSON array; the headroom is for the thinking.
+    maxTokens: 8192,
+    // Cross-referencing sections is structured extraction, not open-ended
+    // strategy. Low effort answers as well here and cuts a ~30s call to a few
+    // seconds — this endpoint is on-demand, with a user waiting on it.
+    reasoningEffort: 'low',
     system:
       'You analyze consistency across a product blueprint. Given one section that was just ' +
       'edited and the other sections, identify which OTHER sections may now be inconsistent, ' +
@@ -378,13 +387,22 @@ export async function analyzeSectionImpact(userId: string, projectId: string, se
     ].join('\n'),
   });
 
-  let parsed: unknown;
-  try {
-    const start = raw.indexOf('[');
-    const end = raw.lastIndexOf(']');
-    parsed = JSON.parse(raw.slice(start, end + 1));
-  } catch {
-    throw new ApiError(502, 'AI returned an unparseable impact analysis — please try again');
+  // "Nothing is affected" is an outcome the prompt explicitly invites, and a
+  // model may well express it in prose instead of as `[]`. Treat a response
+  // with no array in it as an empty result rather than an error — reporting a
+  // 502 for a correct answer is worse than the answer being unstructured.
+  const start = raw.indexOf('[');
+  const end = raw.lastIndexOf(']');
+
+  let parsed: unknown = [];
+  if (start !== -1 && end > start) {
+    try {
+      parsed = JSON.parse(raw.slice(start, end + 1));
+    } catch {
+      // Genuinely malformed JSON — distinct from "no JSON here", and worth
+      // surfacing since it means the model ignored the output contract.
+      throw new ApiError(502, 'AI returned malformed impact analysis JSON — please try again');
+    }
   }
 
   // Keep only real other-section keys with a reason — never invent sections.

@@ -15,10 +15,25 @@ export interface AiAttachment {
   base64: string;
 }
 
+// How hard the model should think before answering. Vendor-neutral on purpose:
+// OpenAI maps it to `reasoning.effort`, Anthropic to its thinking budget.
+//
+// This is a real lever, not a tuning knob to ignore. On a reasoning model the
+// thinking is billed against the SAME budget as the visible answer, so a task
+// that needs little reasoning and a short answer should say so — otherwise it
+// pays for deliberation it never needed, in both latency and tokens.
+export type AiReasoningEffort = 'minimal' | 'low' | 'medium' | 'high';
+
 export interface AiCompletionRequest {
   system?: string;
   prompt: string;
+  // Total output budget. On reasoning models this covers the model's INTERNAL
+  // reasoning as well as the text you get back, so it must leave room for both
+  // — a budget sized only to the expected answer produces an empty response.
   maxTokens?: number;
+  // Per-call override of the configured default. Structured extraction should
+  // use 'low'; open-ended strategy work can afford 'medium' or 'high'.
+  reasoningEffort?: AiReasoningEffort;
   // Optional. Providers that receive attachments they can't represent should
   // throw rather than silently dropping them — a silently text-only answer
   // about an image is worse than an error.

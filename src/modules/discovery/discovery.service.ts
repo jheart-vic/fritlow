@@ -65,7 +65,12 @@ async function gradeAnswerConfidence(
       feature: 'discovery.confidence',
       userId,
       projectId,
-      maxTokens: 1024, // headroom so a reasoning model still emits the number
+      // The answer is a single number, but reasoning is billed against the
+      // same budget — observed usage already sits at ~830 of the old 1024 cap,
+      // so a slightly harder answer to grade would have exhausted it and
+      // returned nothing. Grading against a rubric needs no deep reasoning.
+      maxTokens: 2048,
+      reasoningEffort: 'low',
       system:
         "You grade how specific and complete a founder's answer to a product discovery " +
         'question is, on a 0-100 scale. Vague/generic/hand-wavy answers ("everyone", ' +
