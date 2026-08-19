@@ -193,6 +193,27 @@ export async function updateProject(userId: string, projectId: string, input: Up
     await assertCanMove(userId, project.workspaceId, input.workspaceId!);
   }
 
+  // LAUNCHED is the one status a human sets — the other three are consequences
+  // the backend applies when the founder actually does the thing (starts
+  // discovery, generates a blueprint). It is a claim: "this shipped."
+  //
+  // Require a blueprint before that claim can be made. Without this the status
+  // means only "somebody clicked it": an empty DRAFT could be marked LAUNCHED,
+  // which puts it in the library's Launched filter, hands it the dashboard's
+  // terminal CELEBRATE state, and quietly corrupts the admin status counts.
+  if (input.status === 'LAUNCHED' && project.status !== 'LAUNCHED') {
+    const blueprint = await prisma.blueprint.findUnique({
+      where: { projectId: project.id },
+      select: { id: true },
+    });
+    if (!blueprint) {
+      throw ApiError.badRequest(
+        'A project can only be launched once it has a blueprint — complete discovery and ' +
+          'generate the blueprint first.',
+      );
+    }
+  }
+
   // Read the membership delta BEFORE the update, while the project still
   // belongs to the source — afterwards there is no record of who could see it.
   const delta = isMove ? await getAccessDelta(project.workspaceId, input.workspaceId!) : null;

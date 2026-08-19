@@ -22,6 +22,15 @@ export async function list(req: Request, res: Response) {
   res.status(200).json({ comments });
 }
 
+export async function edit(req: Request, res: Response) {
+  const comment = await commentService.editComment(
+    req.user!.id,
+    req.params.id as string,
+    req.body,
+  );
+  res.status(200).json({ comment });
+}
+
 export async function remove(req: Request, res: Response) {
   await commentService.deleteComment(req.user!.id, req.params.id as string);
   res.status(204).send();

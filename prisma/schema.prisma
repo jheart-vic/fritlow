@@ -372,6 +372,12 @@ model Comment {
   body      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Null until the author edits it; drives the "(edited)" marker in the UI.
+  //
+  // Explicit rather than inferring from `updatedAt != createdAt`: @updatedAt
+  // bumps on ANY write to the row, so that inference would silently start
+  // lying the first time a comment is touched for some unrelated reason.
+  editedAt  DateTime?
 
   project            Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
   projectId          String

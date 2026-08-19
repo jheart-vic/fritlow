@@ -297,7 +297,21 @@ projectRouter.post(
  *               name: { type: string, maxLength: 100 }
  *               oneLineIdea: { type: string, maxLength: 300 }
  *               category: { type: string, maxLength: 60, nullable: true }
- *               status: { type: string, enum: [DRAFT, DISCOVERY, BLUEPRINT_COMPLETE, LAUNCHED] }
+ *               status:
+ *                 type: string
+ *                 enum: [DRAFT, DISCOVERY, BLUEPRINT_COMPLETE, LAUNCHED]
+ *                 description: >-
+ *                   The backend sets the first three itself — DRAFT on creation, DISCOVERY
+ *                   when the interview starts, BLUEPRINT_COMPLETE when the blueprint is
+ *                   generated. **LAUNCHED is the only one a human declares**: it means the
+ *                   founder says this shipped, so it is a deliberate action worth confirming
+ *                   in the UI, not an idle dropdown in a list row.
+ *
+ *
+ *                   **A project can only be set to LAUNCHED once it has a blueprint** —
+ *                   otherwise 400. Without that, an empty project could be marked launched,
+ *                   land in the library's Launched filter, and reach the dashboard's terminal
+ *                   CELEBRATE state with nothing in it.
  *               workspaceId:
  *                 type: string
  *                 format: uuid
