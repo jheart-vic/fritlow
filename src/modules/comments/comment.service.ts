@@ -2,7 +2,7 @@ import { prisma } from '../../lib/prisma';
 import { ApiError } from '../../utils/api-error';
 import { notify } from '../notifications/notification.service';
 import { getProject } from '../projects/project.service';
-import type { CreateCommentInput } from './comment.schemas';
+import type { CreateCommentInput, EditCommentInput } from './comment.schemas';
 
 // Comments are anchored to a blueprint SECTION (per the build spec), threaded
 // via optional parentId. Access follows project membership: any member of the
@@ -14,6 +14,11 @@ const authorSelect = {
   author: { select: { id: true, fullName: true, avatarUrl: true } },
 } as const;
 
+// How long after posting the author may still edit. Short on purpose: it
+// covers typos and second thoughts without letting someone rewrite what they
+// said after people have already replied to it.
+const EDIT_WINDOW_MINUTES = 15;
+
 // The public shape of a comment (with its nested replies).
 export interface CommentNode {
   id: string;
@@ -21,9 +26,12 @@ export interface CommentNode {
   projectId: string;
   sectionKey: string;
   parentId: string | null;
-  author: { id: string; fullName: string };
+  // avatarUrl was always selected and returned; this type just failed to
+  // declare it, which made the field look absent to anyone reading the code.
+  author: { id: string; fullName: string; avatarUrl: string | null };
   createdAt: Date;
   updatedAt: Date;
+  editedAt: Date | null;
   replies: CommentNode[];
 }
 
@@ -76,6 +84,7 @@ export async function createComment(
       parentId: true,
       createdAt: true,
       updatedAt: true,
+      editedAt: true,
       ...authorSelect,
     },
   });
@@ -113,6 +122,7 @@ export async function listComments(
       parentId: true,
       createdAt: true,
       updatedAt: true,
+      editedAt: true,
       ...authorSelect,
     },
   });
@@ -128,6 +138,63 @@ export async function listComments(
     else roots.push(node); // top-level (or an orphan whose parent is gone)
   }
   return roots;
+}
+
+// Edit your own comment, within a short window of posting it.
+//
+// Author-only — deliberately NARROWER than delete, which also allows workspace
+// OWNER/ADMIN. A manager removing off-topic content is moderation; a manager
+// rewriting someone's words leaves the original author's name on text they
+// never wrote. There is no legitimate case for it, so it is not possible.
+export async function editComment(userId: string, commentId: string, input: EditCommentInput) {
+  const comment = await prisma.comment.findUnique({
+    where: { id: commentId },
+    include: { project: { select: { workspaceId: true } } },
+  });
+  if (!comment) {
+    throw ApiError.notFound('Comment not found');
+  }
+
+  // Membership first, so a non-member gets "not a member" rather than learning
+  // whether a given comment id belongs to someone else.
+  const member = await prisma.workspaceMember.findUnique({
+    where: { userId_workspaceId: { userId, workspaceId: comment.project.workspaceId } },
+  });
+  if (!member) {
+    throw ApiError.forbidden('You are not a member of this workspace');
+  }
+
+  if (comment.authorId !== userId) {
+    throw ApiError.forbidden('You can only edit your own comments');
+  }
+
+  // The window runs from when it was POSTED, not from the last edit — otherwise
+  // repeated edits would extend it indefinitely and the limit would mean nothing.
+  const editableUntil = new Date(comment.createdAt.getTime() + EDIT_WINDOW_MINUTES * 60 * 1000);
+  if (new Date() > editableUntil) {
+    throw ApiError.badRequest(
+      `Comments can only be edited within ${EDIT_WINDOW_MINUTES} minutes of posting. ` +
+        'Delete it and post a correction instead.',
+    );
+  }
+
+  // No notification on edit: the reply/mention alert already fired when this
+  // was posted, and pinging people again for a typo fix is noise.
+  return prisma.comment.update({
+    where: { id: comment.id },
+    data: { body: input.body, editedAt: new Date() },
+    select: {
+      id: true,
+      body: true,
+      projectId: true,
+      sectionKey: true,
+      parentId: true,
+      createdAt: true,
+      updatedAt: true,
+      editedAt: true,
+      ...authorSelect,
+    },
+  });
 }
 
 export async function deleteComment(userId: string, commentId: string) {

@@ -56,7 +56,36 @@ The `user` object everywhere:
 
 ## 2. Projects — `/api/v1/projects` (Bearer required from here on)
 
-Project statuses: `DRAFT → DISCOVERY → BLUEPRINT_COMPLETE → LAUNCHED`. The backend moves the first three automatically (starting discovery sets DISCOVERY, generating a blueprint sets BLUEPRINT_COMPLETE); `LAUNCHED` is set by the frontend via PATCH when the founder declares launch.
+Project statuses: `DRAFT → DISCOVERY → BLUEPRINT_COMPLETE → LAUNCHED`. The backend moves the first three automatically (creation sets DRAFT, starting discovery sets DISCOVERY, generating a blueprint sets BLUEPRINT_COMPLETE).
+
+**`LAUNCHED` is the only status a human declares** — via `PATCH /projects/:id` — and it means the founder is saying "this shipped". Two consequences for the UI:
+
+- **It requires a blueprint.** `PATCH … { status: "LAUNCHED" }` returns **400** on a project without one. Disable the action until then (`hasBlueprint` is on the dashboard payload) rather than surfacing the error.
+- **Treat it as a deliberate action** with confirmation, not an idle dropdown in a list row. It's what the library's Launched filter counts, and it puts the project into the dashboard's terminal `CELEBRATE` state.
+
+The other transitions aren't order-enforced today — only the launch claim is gated.
+
+### Scoping to one workspace — this one's yours
+
+**There is no "current workspace" on the server.** `GET /projects` and `GET /dashboard` return projects from **every workspace you belong to**, because membership is additive: joining a workspace you were invited to doesn't remove you from your own. Both sets come back together.
+
+So if you have a workspace switcher, **pass `?workspaceId=<selected>`** on both calls. Without it you get the union, which looks like a leak but isn't — it's all content you're entitled to see.
+
+```
+GET /api/v1/projects?workspaceId=<id>
+GET /api/v1/dashboard?workspaceId=<id>
+```
+
+Pass a workspace you don't belong to and you get a **403**, not an empty list — silently returning `[]` would read as "this workspace is empty".
+
+**Two things that are not the current workspace:**
+
+- **`isDefault` / the default workspace.** It answers exactly one question: where a project lands when `POST /projects` doesn't name a workspace. Changing it doesn't change what any list returns. Don't reuse it as the switcher's state.
+- **Leaving vs switching.** Switching your view changes nothing server-side; you're still a member. Only `DELETE /workspaces/:id/members/me` actually removes access.
+
+**Suggested approach:** put the workspace in the route (`/w/:workspaceId/projects`) rather than in component state, and persist the last selection in `localStorage`. That gets you working deep links, refresh, back button, and independent tabs for free — none of which survive if the selection lives on the server.
+
+Keeping the unfiltered call is deliberate: the dashboard's premise is showing a founder everything they're working on across workspaces. Omit `workspaceId` when you want that view, pass it when you don't.
 
 | Method + path | Body / query | Success | Notes |
 |---|---|---|---|
@@ -538,11 +567,22 @@ Discussion threads anchored to a **blueprint section**. Any project member can r
 |---|---|---|---|
 | `POST /api/v1/projects/:projectId/blueprint/sections/:sectionKey/comments` | `{ body, parentId? }` | **201** `{ comment }` | `parentId` = reply within a thread (must be a comment on the **same** section, else 404). Unknown section → 404. |
 | `GET /api/v1/projects/:projectId/blueprint/sections/:sectionKey/comments` | — | **200** `{ comments }` | Threaded: top-level comments (oldest first), each with nested `replies`. |
+| `PATCH /api/v1/comments/:id` | `{ body }` | **200** `{ comment }` | ⚠️ **Flat path.** **Author only** — not OWNER/ADMIN. Only within **15 minutes of posting**, else 400. |
 | `DELETE /api/v1/comments/:id` | — | **204** | ⚠️ **Flat path — not nested under the project.** Author, or workspace OWNER/ADMIN. Deleting a parent **cascades** its replies. 403 otherwise, 404 if gone. |
 
-`Comment`: `{ id, body, projectId, sectionKey, parentId (null for top-level), author: { id, fullName }, createdAt, updatedAt, replies: Comment[] }`. `replies` is populated on the GET (tree) response and empty (`[]`) on a freshly created comment.
+`Comment`: `{ id, body, projectId, sectionKey, parentId (null for top-level), author: { id, fullName, avatarUrl }, createdAt, updatedAt, editedAt, replies: Comment[] }`. `replies` is populated on the GET (tree) response and empty (`[]`) on a freshly created comment.
 
-Note the DELETE endpoint deliberately lives at the top-level `/api/v1/comments/:id` (per the backend spec), unlike create/list which are section-scoped.
+`author.avatarUrl` is the same shape used everywhere else in the API — `null` when the user has no photo (render initials) — and is identical on nested `replies[]`.
+
+### Editing
+
+`editedAt` is `null` until the author edits, then a timestamp. **Use it for the "(edited)" marker** — don't infer from `updatedAt != createdAt`, which bumps on any write to the row.
+
+Edit permissions are deliberately **narrower than delete**: only the author, never a workspace manager. Moderation means removing content, not rewriting it under someone else's name. So show *edit* only on the reader's own comments, while *delete* can still appear on others' for OWNER/ADMIN.
+
+The **15-minute window** runs from `createdAt`, not from the last edit — repeated edits can't extend it. Hide the edit affordance once the comment is older than that rather than letting people find the limit by hitting a 400; delete-and-repost is the remaining route. Only `body` is editable: a comment can't change section or thread parent.
+
+Note the PATCH/DELETE endpoints deliberately live at the top-level `/api/v1/comments/:id` (per the backend spec), unlike create/list which are section-scoped.
 
 ---
 

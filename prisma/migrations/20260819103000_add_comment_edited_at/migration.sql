@@ -1,0 +1,11 @@
+-- Comments become editable by their author (within a short window), so the UI
+-- needs to distinguish "posted" from "posted then reworded".
+--
+-- Deliberately NOT inferred from `updatedAt != createdAt`: updatedAt is
+-- @updatedAt and bumps on any write to the row. It happens to be reliable
+-- today only because nothing else ever writes a comment — the first time that
+-- stops being true, every comment silently renders as edited.
+--
+-- Nullable with no backfill: existing comments have never been edited, and
+-- null is exactly that statement.
+ALTER TABLE "Comment" ADD COLUMN "editedAt" TIMESTAMP(3);

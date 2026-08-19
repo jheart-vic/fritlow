@@ -5,6 +5,56 @@ The source of truth is always the live spec at `/docs` (raw JSON at `/docs.json`
 
 ---
 
+## 2026-08-19 — Comment editing, author avatars, and what "Launched" means
+
+Nothing breaking. One new endpoint, one contract correction, one new rule.
+
+### `avatarUrl` on comment authors — it was already there
+
+**The API has been returning it all along.** `Comment.author` is selected with `{ id, fullName, avatarUrl }`, on top-level comments *and* on nested `replies[]`, and a live check against the database confirms a real URL coming back.
+
+What was wrong was the **documentation** — the OpenAPI `Comment.author` schema listed only `id` and `fullName`, so it looked absent to anyone reading the spec. Now corrected, along with the internal type that had the same gap.
+
+**You can render avatars today without waiting for a deploy.** `avatarUrl` is `null` when the user has no photo (render initials); the key is always present.
+
+### New — edit a comment
+
+```
+PATCH /api/v1/comments/{id}
+{ "body": "the corrected text" }
+```
+
+Returns `{ comment }`. Sits alongside the existing `DELETE /api/v1/comments/{id}` at the same flat path.
+
+Three rules worth building around:
+
+**Author only.** Deliberately narrower than delete, which also allows workspace OWNER/ADMIN. Removing off-topic content is moderation; rewriting someone's words leaves their name on text they never wrote. A manager editing another person's comment gets a **403** — so show the edit affordance only on the reader's own comments, while delete can still appear on others' for OWNER/ADMIN.
+
+**15-minute window**, measured from when the comment was **posted** — not from the last edit, so repeated edits can't extend it. After that the API returns **400**. Hide the edit affordance once `createdAt` is more than 15 minutes old rather than letting people discover the limit by hitting it; the remaining route is delete-and-repost.
+
+**Only `body` is editable.** A comment can't be moved to another section or re-parented into a different thread, which would change what the replies beneath it appear to be answering.
+
+### New field — `editedAt`
+
+`Comment` now carries `editedAt` (nullable, null until first edited). **Use this for the "(edited)" marker.**
+
+Don't infer it from `updatedAt != createdAt`. That happens to work right now only because nothing else ever writes a comment row — the first time that changes, every comment silently renders as edited.
+
+### New rule — a project can only be LAUNCHED once it has a blueprint
+
+To answer the question directly: **`LAUNCHED` means the founder said so.** The backend sets the first three statuses itself — `DRAFT` on creation, `DISCOVERY` when the interview starts, `BLUEPRINT_COMPLETE` when the blueprint is generated. `LAUNCHED` is the only one a human declares, via `PATCH /projects/{id}`.
+
+Until now there was no check at all, so an empty `DRAFT` could be marked `LAUNCHED` — landing it in the library's Launched filter and giving it the dashboard's terminal `CELEBRATE` state with nothing in it. Now `PATCH … { status: "LAUNCHED" }` returns **400** unless the project has a blueprint.
+
+Two implications for the UI:
+
+- **Treat "mark as launched" as a deliberate action**, with confirmation — it's a claim the founder is making, not an idle dropdown in a list row.
+- **Disable it until the project has a blueprint** rather than surfacing the 400. `hasBlueprint` is already on the dashboard payload; `GET /projects/{id}` tells you the same via `status`.
+
+Other status transitions are unaffected — the guard is specific to `LAUNCHED`. Note the backend still doesn't enforce the full `DRAFT → DISCOVERY → BLUEPRINT_COMPLETE → LAUNCHED` order; only the launch claim is gated. Say if you'd like the rest locked down too.
+
+---
+
 ## 2026-08-18 — Chat rename, and the AI latency / empty-response fix
 
 Nothing breaking. One new endpoint, one clarification, and a real fix behind the scenes.

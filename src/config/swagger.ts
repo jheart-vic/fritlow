@@ -405,13 +405,30 @@ export const swaggerSpec = swaggerJsdoc({
             },
             author: {
               type: 'object',
+              description:
+                'The same author shape used everywhere else in the API. Identical on nested ' +
+                'replies[].',
               properties: {
                 id: { type: 'string', format: 'uuid' },
                 fullName: { type: 'string' },
+                avatarUrl: {
+                  type: 'string',
+                  nullable: true,
+                  description: 'Null when the user has no photo — render initials.',
+                },
               },
             },
             createdAt: { type: 'string', format: 'date-time' },
             updatedAt: { type: 'string', format: 'date-time' },
+            editedAt: {
+              type: 'string',
+              format: 'date-time',
+              nullable: true,
+              description:
+                'Null until the author edits the comment. Use this for the "(edited)" ' +
+                'marker — do NOT infer it from updatedAt != createdAt, which bumps on any ' +
+                'write to the row.',
+            },
             replies: {
               type: 'array',
               description: 'Nested replies (present on list responses; empty for a fresh comment)',
